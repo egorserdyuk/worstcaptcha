@@ -586,13 +586,13 @@ header .subtitle {
 .image-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 12px;
+    gap: 8px;
     background: #f8f9fa;
-    padding: 16px;
-    border-radius: 8px;
+    padding: 12px;
+    border-radius: 4px;
     margin-bottom: 15px;
     width: 100%;
-    max-width: 400px;
+    max-width: 350px;
     margin-left: auto;
     margin-right: auto;
 }
@@ -600,8 +600,8 @@ header .subtitle {
 .image-cell {
     aspect-ratio: 1;
     background: white;
-    border: 3px solid #e0e0e0;
-    border-radius: 8px;
+    border: 2px solid #e0e0e0;
+    border-radius: 4px;
     cursor: pointer;
     position: relative;
     overflow: hidden;
@@ -619,8 +619,8 @@ header .subtitle {
 .image-cell img {
     width: 100%;
     height: 100%;
-    object-fit: contain;
-    border-radius: 5px;
+    object-fit: cover;
+    border-radius: 2px;
     display: block;
 }
 
@@ -872,8 +872,8 @@ header .subtitle {
     /* Step 3 mobile improvements */
     .image-grid {
         max-width: 100%;
-        gap: 8px;
-        padding: 12px;
+        gap: 6px;
+        padding: 8px;
     }
     
     .image-cell {
