@@ -925,7 +925,7 @@ class WorstCaptcha {
         let gridHTML = `
             <div class="step3-container">
                 <h3>Step 3: Image Selection</h3>
-                <p class="step3-instruction">Find all <span id="target-category" class="category-highlight">${this.step3CurrentCategory}</span> images</p>
+                <p class="step3-instruction">Select all images with <span id="target-category" class="category-highlight">${this.step3CurrentCategory}</span></p>
                 <div class="image-grid">
         `;
         
@@ -947,7 +947,7 @@ class WorstCaptcha {
                         <span>Category: <span id="category-progress">1</span>/${this.step3TotalCategories}</span>
                         <span>Score: <span id="step3-score">0</span></span>
                     </div>
-                    <button id="step3-submit-btn" class="btn btn-primary">Submit Selection</button>
+                    <button id="step3-submit-btn" class="btn btn-primary">VERIFY</button>
                 </div>
             </div>
         `;
