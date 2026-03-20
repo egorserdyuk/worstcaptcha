@@ -353,6 +353,16 @@ header .subtitle {
     padding: 12px;
     border-radius: 4px;
     margin-bottom: 12px;
+    min-height: 300px;
+}
+
+/* Step 2 and 3 container should take full grid area */
+.captcha-grid .step2-container {
+    grid-column: 1 / -1;
+    grid-row: 1 / -1;
+    background: white;
+    border-radius: 4px;
+    padding: 20px;
 }
 
 .captcha-cell {
@@ -443,6 +453,83 @@ header .subtitle {
     background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
     width: 0%;
     transition: width 0.3s;
+}
+
+/* Step 2: Note Singing UI */
+.step2-container {
+    padding: 20px;
+    text-align: center;
+    min-height: 300px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+.step2-container h3 {
+    color: #333;
+    margin-bottom: 10px;
+    font-size: 1.2rem;
+}
+
+.step2-container p {
+    color: #666;
+    margin-bottom: 20px;
+    font-size: 0.95rem;
+}
+
+.note-display {
+    display: flex;
+    justify-content: space-around;
+    margin-bottom: 20px;
+}
+
+.target-note, .user-note {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 8px;
+    min-width: 120px;
+}
+
+.target-note span, .user-note span {
+    display: block;
+    margin-bottom: 5px;
+}
+
+.target-note span:first-child, .user-note span:first-child {
+    font-size: 0.85rem;
+    color: #999;
+}
+
+.target-note span:last-child, .user-note span:last-child {
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: #333;
+}
+
+.note-progress {
+    margin-bottom: 20px;
+    font-size: 1rem;
+    color: #666;
+}
+
+#notes-matched {
+    font-weight: 600;
+    color: #4CAF50;
+}
+
+.mic-status {
+    margin-top: 15px;
+    padding: 10px;
+    background: #e8f5e9;
+    border-radius: 4px;
+    color: #4CAF50;
+    font-size: 0.9rem;
+}
+
+/* Step 3: Coming Soon UI */
+.step2-container .btn-primary {
+    margin-top: 20px;
 }
 
 /* Comments Section */
@@ -577,11 +664,14 @@ header .subtitle {
     
     .captcha-popup {
         width: 95vw;
+        max-height: 90vh;
+        overflow-y: auto;
     }
     
     .captcha-grid {
         gap: 4px;
         padding: 8px;
+        min-height: 250px;
     }
     
     .captcha-instruction {
@@ -591,5 +681,33 @@ header .subtitle {
     
     .bot-text {
         font-size: 2rem;
+    }
+    
+    /* Step 2 and 3 mobile improvements */
+    .step2-container {
+        padding: 15px;
+        min-height: 250px;
+    }
+    
+    .step2-container h3 {
+        font-size: 1.1rem;
+    }
+    
+    .step2-container p {
+        font-size: 0.9rem;
+    }
+    
+    .note-display {
+        flex-direction: column;
+        gap: 15px;
+    }
+    
+    .target-note, .user-note {
+        min-width: 100%;
+    }
+    
+    .mic-status {
+        font-size: 0.85rem;
+        padding: 8px;
     }
 }

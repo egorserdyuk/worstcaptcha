@@ -63,7 +63,7 @@ The captcha generates random instructions from a pool including:
 - "Ignore everything red, EXCEPT those reds that are in the top row"
 - "Click the shapes that are currently changing color, but only if they are circular… no, wait, now only if they are NOT circular"
 - "Urgently click everything left over from the previous instruction before it disappears"
-- "If it's an even second — click triangles. If odd — pretend they don't exist"
+- "If it's an even second - click triangles. If odd - pretend they don't exist"
 
 ## API Endpoints
 

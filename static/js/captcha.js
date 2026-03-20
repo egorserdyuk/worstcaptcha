@@ -35,6 +35,16 @@ class WorstCaptcha {
         // Animation frame ID
         this.animationId = null;
         
+        // 3-step captcha system
+        this.currentStep = 1;
+        this.step2Notes = [];
+        this.step2CurrentNoteIndex = 0;
+        this.step2TargetFrequency = 0;
+        this.step2MicrophoneStream = null;
+        this.step2Analyser = null;
+        this.step2IsListening = false;
+        this.step2MatchedNotes = 0;
+        
         // Initialize
         this.init();
     }
@@ -94,8 +104,20 @@ class WorstCaptcha {
             cancelAnimationFrame(this.animationId);
         }
         
+        // Stop microphone if active
+        if (this.step2MicrophoneStream) {
+            this.step2MicrophoneStream.getTracks().forEach(track => track.stop());
+            this.step2MicrophoneStream = null;
+        }
+        this.step2IsListening = false;
+        
         // Reset checkbox and clean check field
         this.resetCheckbox();
+        
+        // Show step 1 instruction and status again
+        document.getElementById('captcha-instruction').classList.remove('hidden');
+        document.querySelector('.captcha-status').classList.remove('hidden');
+        document.querySelector('.captcha-progress').classList.remove('hidden');
     }
     
     resetCheckbox() {
@@ -435,23 +457,283 @@ class WorstCaptcha {
         clearInterval(this.instructionTimer);
         
         if (completed) {
-            // Show success message and mark checkbox as completed
+            if (this.currentStep === 1) {
+                // Step 1 completed - move to step 2
+                this.currentStep = 2;
+                this.startStep2();
+            } else if (this.currentStep === 2) {
+                // Step 2 completed - move to step 3 (to be implemented)
+                this.currentStep = 3;
+                this.startStep3();
+            } else if (this.currentStep === 3) {
+                // All steps completed
+                const captchaCheckbox = document.getElementById('captcha-checkbox');
+                captchaCheckbox.classList.add('completed');
+                
+                const checkbox = document.getElementById('captcha-check');
+                checkbox.checked = true;
+                
+                alert('🎉 Captcha completed! You can now submit your comment.');
+                this.hideCaptcha();
+                this.submitComment();
+            }
+        } else {
+            // Time expired - proceed to next step without interruption
+            if (this.currentStep === 1) {
+                // Failed step 1 - proceed to step 2 anyway
+                this.currentStep = 2;
+                this.startStep2();
+            } else if (this.currentStep === 2) {
+                // Failed step 2 - proceed to step 3 anyway
+                this.currentStep = 3;
+                this.startStep3();
+            } else {
+                // Failed step 3 - reset
+                alert('⏰ Time expired! Please try again.');
+                this.resetCheckbox();
+                this.hideCaptcha();
+            }
+        }
+    }
+    
+    // Step 2: Note Singing
+    async startStep2() {
+        // Generate 3 random notes (frequencies in Hz)
+        const noteFrequencies = [261.63, 329.63, 392.00]; // C4, E4, G4
+        this.step2Notes = noteFrequencies.sort(() => Math.random() - 0.5);
+        this.step2CurrentNoteIndex = 0;
+        this.step2MatchedNotes = 0;
+        
+        // Show step 2 UI
+        this.showStep2UI();
+        
+        // Request microphone access
+        await this.setupMicrophone();
+        
+        // Play first target note
+        this.playTargetNote();
+    }
+    
+    showStep2UI() {
+        // Hide step 1 instruction and status
+        document.getElementById('captcha-instruction').classList.add('hidden');
+        document.querySelector('.captcha-status').classList.add('hidden');
+        document.querySelector('.captcha-progress').classList.add('hidden');
+        
+        const grid = document.getElementById('captcha-grid');
+        grid.innerHTML = `
+            <div class="step2-container">
+                <h3>Step 2: Sing the Notes</h3>
+                <p>Listen to the note, then sing it into your microphone.</p>
+                <div class="note-display">
+                    <div class="target-note">
+                        <span>Target Note:</span>
+                        <span id="target-note-freq">${this.step2Notes[0]} Hz</span>
+                    </div>
+                    <div class="user-note">
+                        <span>Your Pitch:</span>
+                        <span id="user-note-freq">-- Hz</span>
+                    </div>
+                </div>
+                <div class="note-progress">
+                    <span>Notes matched: <span id="notes-matched">0</span>/3</span>
+                </div>
+                <button id="play-note-btn" class="btn btn-secondary">🔊 Play Note Again</button>
+                <div class="mic-status" id="mic-status">🎤 Requesting microphone access...</div>
+            </div>
+        `;
+        
+        document.getElementById('play-note-btn').addEventListener('click', () => this.playTargetNote());
+    }
+    
+    async setupMicrophone() {
+        try {
+            // On iOS Safari, we need to handle AudioContext suspension
+            if (!this.audioContext) {
+                this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            
+            // Resume AudioContext if suspended (iOS requirement)
+            if (this.audioContext.state === 'suspended') {
+                await this.audioContext.resume();
+            }
+            
+            this.step2MicrophoneStream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: false
+                }
+            });
+            
+            const source = this.audioContext.createMediaStreamSource(this.step2MicrophoneStream);
+            this.step2Analyser = this.audioContext.createAnalyser();
+            this.step2Analyser.fftSize = 2048;
+            this.step2Analyser.smoothingTimeConstant = 0.8;
+            
+            source.connect(this.step2Analyser);
+            
+            this.step2IsListening = true;
+            this.detectPitch();
+            
+            document.getElementById('mic-status').textContent = '🎤 Microphone active - sing the note!';
+            document.getElementById('mic-status').style.color = '#4CAF50';
+            
+        } catch (err) {
+            console.error('Microphone access denied:', err);
+            const micStatus = document.getElementById('mic-status');
+            micStatus.innerHTML = '❌ Microphone access denied<br><small>Please allow microphone access in your browser settings and reload the page</small>';
+            micStatus.style.color = '#ff4444';
+            micStatus.style.background = '#ffebee';
+            micStatus.style.padding = '15px';
+            micStatus.style.borderRadius = '8px';
+        }
+    }
+    
+    playTargetNote() {
+        if (!this.audioContext) {
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        
+        this.step2TargetFrequency = this.step2Notes[this.step2CurrentNoteIndex];
+        
+        const oscillator = this.audioContext.createOscillator();
+        const gainNode = this.audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(this.audioContext.destination);
+        
+        oscillator.frequency.value = this.step2TargetFrequency;
+        oscillator.type = 'sine';
+        
+        gainNode.gain.setValueAtTime(0.3, this.audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 1);
+        
+        oscillator.start(this.audioContext.currentTime);
+        oscillator.stop(this.audioContext.currentTime + 1);
+        
+        document.getElementById('target-note-freq').textContent = `${this.step2TargetFrequency} Hz`;
+    }
+    
+    detectPitch() {
+        if (!this.step2IsListening || !this.step2Analyser) return;
+        
+        const bufferLength = this.step2Analyser.fftSize;
+        const buffer = new Float32Array(bufferLength);
+        this.step2Analyser.getFloatTimeDomainData(buffer);
+        
+        // Autocorrelation pitch detection
+        const pitch = this.autoCorrelate(buffer, this.audioContext.sampleRate);
+        
+        if (pitch > 0) {
+            document.getElementById('user-note-freq').textContent = `${Math.round(pitch)} Hz`;
+            
+            // Check if pitch matches target (within 10% tolerance)
+            const tolerance = this.step2TargetFrequency * 0.1;
+            if (Math.abs(pitch - this.step2TargetFrequency) < tolerance) {
+                this.onNoteMatched();
+            }
+        }
+        
+        requestAnimationFrame(() => this.detectPitch());
+    }
+    
+    autoCorrelate(buffer, sampleRate) {
+        // Autocorrelation algorithm for pitch detection
+        const SIZE = buffer.length;
+        const MAX_SAMPLES = Math.floor(SIZE / 2);
+        let best_offset = -1;
+        let best_correlation = 0;
+        let rms = 0;
+        
+        for (let i = 0; i < SIZE; i++) {
+            rms += buffer[i] * buffer[i];
+        }
+        rms = Math.sqrt(rms / SIZE);
+        
+        if (rms < 0.01) return -1; // Not enough signal
+        
+        let lastCorrelation = 1;
+        for (let offset = 1; offset < MAX_SAMPLES; offset++) {
+            let correlation = 0;
+            for (let i = 0; i < MAX_SAMPLES; i++) {
+                correlation += Math.abs(buffer[i] - buffer[i + offset]);
+            }
+            correlation = 1 - (correlation / MAX_SAMPLES);
+            
+            if (correlation > 0.9 && correlation > lastCorrelation) {
+                const foundGoodCorrelation = correlation > best_correlation;
+                if (foundGoodCorrelation) {
+                    best_correlation = correlation;
+                    best_offset = offset;
+                }
+            }
+            lastCorrelation = correlation;
+        }
+        
+        if (best_correlation > 0.01) {
+            return sampleRate / best_offset;
+        }
+        return -1;
+    }
+    
+    onNoteMatched() {
+        this.step2MatchedNotes++;
+        document.getElementById('notes-matched').textContent = this.step2MatchedNotes;
+        
+        // Visual feedback
+        const userNoteEl = document.getElementById('user-note-freq');
+        userNoteEl.style.color = '#4CAF50';
+        setTimeout(() => {
+            userNoteEl.style.color = '';
+        }, 500);
+        
+        if (this.step2MatchedNotes >= 3) {
+            // Step 2 completed
+            this.step2IsListening = false;
+            if (this.step2MicrophoneStream) {
+                this.step2MicrophoneStream.getTracks().forEach(track => track.stop());
+            }
+            this.gameOver(true);
+        } else {
+            // Move to next note
+            this.step2CurrentNoteIndex++;
+            setTimeout(() => this.playTargetNote(), 1000);
+        }
+    }
+    
+    // Step 3: Placeholder (to be implemented)
+    startStep3() {
+        // Show step 3 UI
+        this.showStep3UI();
+    }
+    
+    showStep3UI() {
+        // Hide step 1 instruction and status
+        document.getElementById('captcha-instruction').classList.add('hidden');
+        document.querySelector('.captcha-status').classList.add('hidden');
+        document.querySelector('.captcha-progress').classList.add('hidden');
+        
+        const grid = document.getElementById('captcha-grid');
+        grid.innerHTML = `
+            <div class="step2-container">
+                <h3>Step 3: Coming Soon</h3>
+                <p>This step is not yet implemented. You've completed the captcha!</p>
+                <button id="step3-complete-btn" class="btn btn-primary">✅ Complete Captcha</button>
+            </div>
+        `;
+        
+        document.getElementById('step3-complete-btn').addEventListener('click', () => {
             const captchaCheckbox = document.getElementById('captcha-checkbox');
             captchaCheckbox.classList.add('completed');
             
-            // Check the checkbox to show checkmark
             const checkbox = document.getElementById('captcha-check');
             checkbox.checked = true;
             
             alert('🎉 Captcha completed! You can now submit your comment.');
             this.hideCaptcha();
             this.submitComment();
-        } else {
-            // Time expired - reset and close
-            alert('⏰ Time expired! Please try again.');
-            this.resetCheckbox();
-            this.hideCaptcha();
-        }
+        });
     }
     
     async submitComment() {

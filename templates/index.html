@@ -86,6 +86,50 @@
                 </div>
             </div>
 
+            <!-- Step 2: Note Singing Widget -->
+            <div id="step2-widget" class="step2-widget hidden">
+                <div class="step2-popup">
+                    <div class="step2-header">
+                        <div class="step2-logo">
+                            <span class="step2-icon">🎤</span>
+                            <span class="step2-title">Step 2: Sing the
+                                Notes</span>
+                        </div>
+                        <button id="step2-close"
+                            class="step2-close">&times;</button>
+                    </div>
+
+                    <div class="step2-content">
+                        <div class="step2-instruction" id="step2-instruction">
+                            Listen to the note, then sing it into your
+                            microphone.
+                        </div>
+
+                        <div class="note-display">
+                            <div class="target-note">
+                                <span>Target Note:</span>
+                                <span id="target-note-freq">-- Hz</span>
+                            </div>
+                            <div class="user-note">
+                                <span>Your Pitch:</span>
+                                <span id="user-note-freq">-- Hz</span>
+                            </div>
+                        </div>
+
+                        <div class="note-progress">
+                            <span>Notes matched: <span
+                                    id="notes-matched">0</span>/3</span>
+                        </div>
+
+                        <button id="play-note-btn" class="btn btn-secondary">🔊
+                            Play Note Again</button>
+
+                        <div class="mic-status" id="mic-status">🎤 Microphone
+                            active</div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Comments Wall -->
             <div class="comments-section">
                 <h2>Recent Comments</h2>

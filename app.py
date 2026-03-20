@@ -21,7 +21,7 @@ CAPTCHA_INSTRUCTIONS = [
     "Ignore everything red, EXCEPT those reds that are in the top row",
     "Click the shapes that are currently changing color, but only if they are circular… no, wait, now only if they are NOT circular",
     "Urgently click everything left over from the previous instruction before it disappears",
-    "If it's an even second — click triangles. If odd — pretend they don't exist",
+    "If it's an even second - click triangles. If odd - pretend they don't exist",
     "Click shapes that are touching the border of the grid",
     "Only click shapes that have appeared in the last 0.5 seconds",
     "Click all shapes that are NOT moving",
