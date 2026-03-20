@@ -132,4 +132,4 @@ MIT License
 
 ## Disclaimer
 
-This captcha is intentionally designed to be extremely difficult and annoying. It's meant for educational purposes and as a joke project. In production, use proper CAPTCHA services like Google reCAPTCHA or hCaptcha.
+This captcha is intentionally designed to be extremely difficult and annoying as joke for Kilo Code hackathon. In production, use proper CAPTCHA services like Google reCAPTCHA or hCaptcha.
