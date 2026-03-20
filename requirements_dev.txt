@@ -2,3 +2,5 @@
 
 ruff
 pre-commit
+pytest
+pytest-cov
