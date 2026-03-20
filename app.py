@@ -106,6 +106,10 @@ def generate_captcha():
     session["wrong_clicks"] = 0
     session["last_click_time"] = 0
     session["white_text_used"] = False
+    session["overall_score"] = 0  # Track score across all steps
+    session["step1_completed"] = False
+    session["step2_completed"] = False
+    session["step3_completed"] = False
 
     return jsonify(
         {
@@ -162,12 +166,16 @@ def verify_captcha_click():
         session["captcha_clicks"] += 1
 
         if session["captcha_score"] >= 25:
+            # Step 1 completed successfully - add to overall score
+            session["step1_completed"] = True
+            session["overall_score"] = session.get("overall_score", 0) + 1
             return jsonify(
                 {
                     "valid": True,
                     "score": session["captcha_score"],
                     "completed": True,
                     "message": "Captcha completed!",
+                    "overall_score": session["overall_score"],
                 }
             )
     else:
@@ -339,6 +347,24 @@ def verify_step3():
         )
 
 
+@app.route("/api/captcha/step2/complete", methods=["POST"])
+def complete_step2():
+    """Mark step 2 as completed"""
+    session["step2_completed"] = True
+    session["overall_score"] = session.get("overall_score", 0) + 1
+    return jsonify({"success": True, "overall_score": session.get("overall_score", 0)})
+
+
+@app.route("/api/captcha/step3/complete", methods=["POST"])
+def complete_step3():
+    """Mark step 3 as completed"""
+    session["step3_completed"] = True
+    # Only add to overall score if step 3 score >= 2
+    if session.get("step3_score", 0) >= 2:
+        session["overall_score"] = session.get("overall_score", 0) + 1
+    return jsonify({"success": True, "overall_score": session.get("overall_score", 0)})
+
+
 @app.route("/api/captcha/step3/status", methods=["GET"])
 def step3_status():
     """Get current step 3 status"""
@@ -347,6 +373,7 @@ def step3_status():
             "skipped": session.get("step3_skipped", False),
             "score": session.get("step3_score", 0),
             "attempts": session.get("step3_attempts", 0),
+            "overall_score": session.get("overall_score", 0),
         }
     )
 
@@ -366,14 +393,14 @@ def add_comment():
     if "captcha_seed" not in session or session.get("captcha_score", 0) < 25:
         return jsonify({"error": "Captcha not completed"}), 403
 
-    # Check step 3 completion (if not skipped)
-    step3_skipped = session.get("step3_skipped", False)
-    step3_score = session.get("step3_score", 0)
-
-    # Calculate total score: step1 (25) + step2 (3) + step3 (5 categories)
-    # User needs at least 2 points from step 3 if they did it
-    if not step3_skipped and step3_score < 2:
-        return jsonify({"error": "Step 3 not completed successfully"}), 403
+    # Check overall score across all steps (needs to be >= 2)
+    overall_score = session.get("overall_score", 0)
+    if overall_score < 2:
+        return jsonify(
+            {
+                "error": f"Captcha not completed successfully. Score: {overall_score}/2 required"
+            }
+        ), 403
 
     comment = {
         "id": len(comments) + 1,
@@ -388,6 +415,10 @@ def add_comment():
     # Clear captcha session
     session.pop("captcha_seed", None)
     session.pop("captcha_score", None)
+    session.pop("overall_score", None)
+    session.pop("step1_completed", None)
+    session.pop("step2_completed", None)
+    session.pop("step3_completed", None)
     session.pop("step3_skipped", None)
     session.pop("step3_score", None)
     session.pop("step3_attempts", None)

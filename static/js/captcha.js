@@ -744,7 +744,7 @@ class WorstCaptcha {
         return -1;
     }
     
-    onNoteMatched() {
+    async onNoteMatched() {
         this.step2MatchedNotes++;
         document.getElementById('notes-matched').textContent = this.step2MatchedNotes;
         
@@ -756,12 +756,23 @@ class WorstCaptcha {
         }, 500);
         
         if (this.step2MatchedNotes >= 3) {
-            // Step 2 completed
+            // Step 2 completed successfully - add to overall score
             this.step2IsListening = false;
             this.step2StartTime = null;
             if (this.step2MicrophoneStream) {
                 this.step2MicrophoneStream.getTracks().forEach(track => track.stop());
             }
+            
+            // Notify backend that step 2 is completed
+            try {
+                await fetch('/api/captcha/step2/complete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+            } catch (error) {
+                console.error('Failed to mark step 2 as complete:', error);
+            }
+            
             this.gameOver(true);
         } else {
             // Move to next note
@@ -909,7 +920,7 @@ class WorstCaptcha {
                 document.getElementById('step3-score').textContent = this.step3Score;
                 
                 if (data.completed) {
-                    // All categories completed
+                    // All categories completed - backend will handle overall score
                     this.completeCaptcha();
                 } else {
                     // Move to next category
@@ -952,16 +963,33 @@ class WorstCaptcha {
         }, 1500);
     }
     
-    completeCaptcha() {
-        const captchaCheckbox = document.getElementById('captcha-checkbox');
-        captchaCheckbox.classList.add('completed');
+    async completeCaptcha() {
+        // Notify backend that step 3 is completed
+        try {
+            await fetch('/api/captcha/step3/complete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+        } catch (error) {
+            console.error('Failed to mark step 3 as complete:', error);
+        }
         
-        const checkbox = document.getElementById('captcha-check');
-        checkbox.checked = true;
-        
-        alert('🎉 Captcha completed! You can now submit your comment.');
-        this.hideCaptcha();
-        this.submitComment();
+        // Check if overall score is >= 2
+        if (this.overallScore >= 2) {
+            const captchaCheckbox = document.getElementById('captcha-checkbox');
+            captchaCheckbox.classList.add('completed');
+            
+            const checkbox = document.getElementById('captcha-check');
+            checkbox.checked = true;
+            
+            alert('🎉 Captcha completed! You can now submit your comment.');
+            this.hideCaptcha();
+            this.submitComment();
+        } else {
+            alert('❌ Captcha failed! You need at least 2 points to pass. Please try again.');
+            this.hideCaptcha();
+            this.resetCheckbox();
+        }
     }
     
     async submitComment() {
