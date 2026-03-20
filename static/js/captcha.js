@@ -44,6 +44,8 @@ class WorstCaptcha {
         this.step2Analyser = null;
         this.step2IsListening = false;
         this.step2MatchedNotes = 0;
+        this.step2TimeLimit = 60; // 1 minute for step 2
+        this.step2StartTime = null;
         
         // Initialize
         this.init();
@@ -110,6 +112,7 @@ class WorstCaptcha {
             this.step2MicrophoneStream = null;
         }
         this.step2IsListening = false;
+        this.step2StartTime = null;
         
         // Reset checkbox and clean check field
         this.resetCheckbox();
@@ -503,12 +506,16 @@ class WorstCaptcha {
         this.step2Notes = noteFrequencies.sort(() => Math.random() - 0.5);
         this.step2CurrentNoteIndex = 0;
         this.step2MatchedNotes = 0;
+        this.step2StartTime = Date.now();
         
         // Show step 2 UI
         this.showStep2UI();
         
         // Request microphone access
         await this.setupMicrophone();
+        
+        // Start step 2 timer
+        this.updateStep2Timer();
         
         // Don't play note automatically - let user click "Play Note Again" button when ready
     }
@@ -547,10 +554,46 @@ class WorstCaptcha {
                 </div>
                 <div class="note-progress">
                     <span>Notes matched: <span id="notes-matched">0</span>/3</span>
+                    <span id="step2-time" style="margin-left: 20px; color: #4CAF50;">Time: ${this.step2TimeLimit.toFixed(1)}s</span>
                 </div>
                 <div class="mic-status" id="mic-status">🎤 Requesting microphone access...</div>
             </div>
         `;
+    }
+    
+    updateStep2Timer() {
+        if (!this.step2StartTime || this.currentStep !== 2) return;
+        
+        const elapsed = (Date.now() - this.step2StartTime) / 1000;
+        const remaining = Math.max(0, this.step2TimeLimit - elapsed);
+        
+        // Update timer display if it exists
+        const timerEl = document.getElementById('step2-time');
+        if (timerEl) {
+            timerEl.textContent = `Time: ${remaining.toFixed(1)}s`;
+            
+            // Change color when time is running low
+            if (remaining < 10) {
+                timerEl.style.color = '#ff4444';
+            } else if (remaining < 20) {
+                timerEl.style.color = '#ff9800';
+            } else {
+                timerEl.style.color = '#4CAF50';
+            }
+        }
+        
+        if (remaining <= 0) {
+            // Time expired - move to step 3
+            this.step2IsListening = false;
+            if (this.step2MicrophoneStream) {
+                this.step2MicrophoneStream.getTracks().forEach(track => track.stop());
+            }
+            this.currentStep = 3;
+            this.startStep3();
+            return;
+        }
+        
+        requestAnimationFrame(() => this.updateStep2Timer());
     }
     
     async setupMicrophone() {
@@ -698,6 +741,7 @@ class WorstCaptcha {
         if (this.step2MatchedNotes >= 3) {
             // Step 2 completed
             this.step2IsListening = false;
+            this.step2StartTime = null;
             if (this.step2MicrophoneStream) {
                 this.step2MicrophoneStream.getTracks().forEach(track => track.stop());
             }
