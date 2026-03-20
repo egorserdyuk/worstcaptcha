@@ -35,6 +35,12 @@ class WorstCaptcha {
         // Animation frame ID
         this.animationId = null;
         
+        // Interval IDs for cleanup
+        this.cursorTricksInterval1 = null;
+        this.cursorTricksInterval2 = null;
+        this.shapeChangeInterval1 = null;
+        this.shapeChangeInterval2 = null;
+        
         // 3-step captcha system
         this.currentStep = 1;
         this.step2Notes = [];
@@ -114,6 +120,28 @@ class WorstCaptcha {
         this.isActive = false;
         if (this.animationId) {
             cancelAnimationFrame(this.animationId);
+        }
+        
+        // Clear all intervals to prevent memory leaks
+        if (this.cursorTricksInterval1) {
+            clearInterval(this.cursorTricksInterval1);
+            this.cursorTricksInterval1 = null;
+        }
+        if (this.cursorTricksInterval2) {
+            clearInterval(this.cursorTricksInterval2);
+            this.cursorTricksInterval2 = null;
+        }
+        if (this.shapeChangeInterval1) {
+            clearInterval(this.shapeChangeInterval1);
+            this.shapeChangeInterval1 = null;
+        }
+        if (this.shapeChangeInterval2) {
+            clearInterval(this.shapeChangeInterval2);
+            this.shapeChangeInterval2 = null;
+        }
+        if (this.instructionTimer) {
+            clearInterval(this.instructionTimer);
+            this.instructionTimer = null;
         }
         
         // Stop microphone if active
@@ -398,7 +426,7 @@ class WorstCaptcha {
     
     startCursorTricks() {
         // Hide cursor randomly
-        setInterval(() => {
+        this.cursorTricksInterval1 = setInterval(() => {
             if (!this.isActive) return;
             
             if (Math.random() < 0.1) {
@@ -410,7 +438,7 @@ class WorstCaptcha {
         }, 3000);
         
         // Invert cursor direction
-        setInterval(() => {
+        this.cursorTricksInterval2 = setInterval(() => {
             if (!this.isActive) return;
             
             if (Math.random() < 0.05) {
@@ -423,7 +451,7 @@ class WorstCaptcha {
     }
     
     startShapeChangeTricks() {
-        setInterval(() => {
+        this.shapeChangeInterval1 = setInterval(() => {
             if (!this.isActive) return;
             
             // Randomly change shape colors
@@ -443,7 +471,7 @@ class WorstCaptcha {
         }, 500);
         
         // Randomly change shape types
-        setInterval(() => {
+        this.shapeChangeInterval2 = setInterval(() => {
             if (!this.isActive) return;
             
             if (Math.random() < 0.1) {
@@ -784,7 +812,7 @@ class WorstCaptcha {
             
             this.gameOver(true);
         } else {
-            // Move to next note after 0.5 second delay
+            // Move to next note after 1 second delay
             setTimeout(() => {
                 this.step2CurrentNoteIndex++;
                 // Update the target frequency for pitch detection
@@ -793,7 +821,7 @@ class WorstCaptcha {
                 document.getElementById('target-note-freq').textContent = this.frequencyToNote(this.step2Notes[this.step2CurrentNoteIndex]);
                 // Reset the note matched flag for the next note
                 this.step2IsNoteMatched = false;
-            }, 500);
+            }, 1000);
         }
     }
     
