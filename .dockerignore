@@ -1,0 +1,74 @@
+# Git files
+.git
+.gitignore
+
+# Python files
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+env
+venv
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Development files
+.pytest_cache
+.coverage
+htmlcov
+.mypy_cache
+.dmypy.json
+dmypy.json
+
+# Documentation
+README.md
+license
+docs
+*.md
+
+# Development dependencies
+requirements_dev.txt
+.pre-commit-config.yaml
+
+# IDE files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Docker files
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Node modules (if any)
+node_modules
+
+# Build artifacts
+build
+dist
+*.egg-info
+*.egg
+
+# Test files
+tests
+test
+*_test.py
+test_*.py
