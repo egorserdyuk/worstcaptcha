@@ -516,6 +516,8 @@ class WorstCaptcha {
         this.step2Notes = noteFrequencies.sort(() => Math.random() - 0.5);
         this.step2CurrentNoteIndex = 0;
         this.step2MatchedNotes = 0;
+        // Initialize target frequency for the first note
+        this.step2TargetFrequency = this.step2Notes[0];
         
         // Show step 2 UI
         this.showStep2UI();
@@ -782,12 +784,16 @@ class WorstCaptcha {
             
             this.gameOver(true);
         } else {
-            // Move to next note
-            this.step2CurrentNoteIndex++;
-            // Update the target frequency for pitch detection
-            this.step2TargetFrequency = this.step2Notes[this.step2CurrentNoteIndex];
-            // Update the target note display without playing audio
-            document.getElementById('target-note-freq').textContent = this.frequencyToNote(this.step2Notes[this.step2CurrentNoteIndex]);
+            // Move to next note after 0.5 second delay
+            setTimeout(() => {
+                this.step2CurrentNoteIndex++;
+                // Update the target frequency for pitch detection
+                this.step2TargetFrequency = this.step2Notes[this.step2CurrentNoteIndex];
+                // Update the target note display without playing audio
+                document.getElementById('target-note-freq').textContent = this.frequencyToNote(this.step2Notes[this.step2CurrentNoteIndex]);
+                // Reset the note matched flag for the next note
+                this.step2IsNoteMatched = false;
+            }, 500);
         }
     }
     
