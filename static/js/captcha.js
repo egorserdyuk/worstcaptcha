@@ -46,6 +46,7 @@ class WorstCaptcha {
         this.step2MatchedNotes = 0;
         this.step2TimeLimit = 60; // 1 minute for step 2
         this.step2StartTime = null;
+        this.step2IsNoteMatched = false; // Flag to prevent multiple matches
         
         // Step 3: Image selection
         this.step3Images = [];
@@ -698,7 +699,13 @@ class WorstCaptcha {
             // Check if pitch matches target (within 10% tolerance)
             const tolerance = this.step2TargetFrequency * 0.1;
             if (Math.abs(pitch - this.step2TargetFrequency) < tolerance) {
-                this.onNoteMatched();
+                if (!this.step2IsNoteMatched) {
+                    this.step2IsNoteMatched = true;
+                    this.onNoteMatched();
+                }
+            } else {
+                // Reset flag when user stops singing the correct note
+                this.step2IsNoteMatched = false;
             }
         }
         
