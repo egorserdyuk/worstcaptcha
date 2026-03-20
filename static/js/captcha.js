@@ -63,11 +63,17 @@ class WorstCaptcha {
         this.step3Is18Plus = false;
         this.step3Skipped = false;
         
+        // CSRF token
+        this.csrfToken = null;
+        
         // Initialize
         this.init();
     }
     
-    init() {
+    async init() {
+        // Fetch CSRF token first
+        await this.fetchCsrfToken();
+        
         // Initialize Quill editor
         this.quill = new Quill('#editor', {
             theme: 'snow',
@@ -95,6 +101,16 @@ class WorstCaptcha {
         
         // Load comments
         this.loadComments();
+    }
+    
+    async fetchCsrfToken() {
+        try {
+            const response = await fetch('/api/csrf-token');
+            const data = await response.json();
+            this.csrfToken = data.csrf_token;
+        } catch (error) {
+            console.error('Failed to fetch CSRF token:', error);
+        }
     }
     
     async showCaptcha() {
@@ -176,7 +192,10 @@ class WorstCaptcha {
         try {
             const response = await fetch('/api/captcha/generate', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': this.csrfToken
+                },
                 body: JSON.stringify({})
             });
             
@@ -218,6 +237,10 @@ class WorstCaptcha {
             if (shape.type === 'triangle') {
                 shapeEl.style.borderBottomColor = shape.color;
             }
+            
+            // Apply initial position
+            shapeEl.style.transform = `translate(-50%, -50%) translate(${shape.x}px, ${shape.y}px) rotate(${shape.rotation}deg) scale(${shape.scale})`;
+            shapeEl.style.opacity = shape.opacity;
             
             cell.appendChild(shapeEl);
             
@@ -341,7 +364,10 @@ class WorstCaptcha {
         try {
             const response = await fetch('/api/captcha/verify', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': this.csrfToken
+                },
                 body: JSON.stringify({
                     shape_id: cellId,
                     instruction_index: this.currentInstructionIndex,
@@ -804,7 +830,10 @@ class WorstCaptcha {
             try {
                 await fetch('/api/captcha/step2/complete', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': this.csrfToken
+                    }
                 });
             } catch (error) {
                 console.error('Failed to mark step 2 as complete:', error);
@@ -862,7 +891,10 @@ class WorstCaptcha {
         try {
             const response = await fetch('/api/captcha/step3/generate', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': this.csrfToken
+                },
                 body: JSON.stringify({ is_18_plus: is18Plus })
             });
             
@@ -949,7 +981,10 @@ class WorstCaptcha {
         try {
             const response = await fetch('/api/captcha/step3/verify', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': this.csrfToken
+                },
                 body: JSON.stringify({
                     selected_indices: this.step3SelectedIndices
                 })
@@ -1011,7 +1046,10 @@ class WorstCaptcha {
         try {
             await fetch('/api/captcha/step3/complete', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': this.csrfToken
+                }
             });
         } catch (error) {
             console.error('Failed to mark step 3 as complete:', error);
@@ -1043,7 +1081,10 @@ class WorstCaptcha {
         try {
             const response = await fetch('/api/comments', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': this.csrfToken
+                },
                 body: JSON.stringify({
                     author: author,
                     content: content,
