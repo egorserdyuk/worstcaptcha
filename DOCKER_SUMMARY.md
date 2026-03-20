@@ -3,30 +3,26 @@
 ## Files Created
 
 ### 1. Dockerfile
-Production-ready multi-stage Docker build based on `python:3.14-alpine` with:
+Production-ready Docker build based on `python:3.14-alpine` with:
 
-**Stage 1 - Builder:**
-- Installs build dependencies (gcc, musl-dev)
-- Creates virtual environment
+**Build Process:**
+- Installs build dependencies (gcc, musl-dev) temporarily
 - Installs Python dependencies from requirements.txt
 - Installs Gunicorn WSGI server
-
-**Stage 2 - Production:**
-- Minimal Alpine Linux image
-- Only runtime dependencies (curl for health checks)
-- Non-root user (appuser) for security
-- Virtual environment from builder stage
-- Application code (app.py, templates, static)
+- Removes build dependencies to reduce image size
+- Creates non-root user (appuser) for security
+- Copies application code (app.py, templates, static)
 - Health check configuration
 - Gunicorn production server
 
 **Key Features:**
-- Multi-stage build for smaller image size
+- Single-stage build for simplicity and reliability
 - Security: Non-root user execution
 - Production: Gunicorn with 2 workers
 - Monitoring: Health checks every 30 seconds
 - Logging: Access and error logs to stdout
-- Port: 5000 (Dokploy compatible)
+- Port: 5005 (Dokploy compatible)
+- Optimized: Build dependencies removed after installation
 
 ### 2. .dockerignore
 Optimizes Docker build by excluding:
@@ -58,7 +54,7 @@ Comprehensive deployment guide covering:
 **Security:** Non-root user (appuser:appgroup)
 **Performance:** Gunicorn with 2 workers
 **Health Check:** HTTP GET / every 30s
-**Port:** 5000
+**Port:** 5005
 
 ## Deployment Commands
 
@@ -76,7 +72,7 @@ dokploy deploy
 
 Or use Dokploy Dashboard:
 1. Connect Git repository
-2. Set port to 5000
+2. Set port to 5005
 3. Deploy
 
 ## Configuration Options
@@ -86,7 +82,7 @@ Edit Dockerfile CMD:
 ```dockerfile
 CMD ["gunicorn", \
      "--workers", "4", \  # Change from 2 to 4
-     "--bind", "0.0.0.0:5000", \
+     "--bind", "0.0.0.0:5005", \
      "--timeout", "120", \
      "--access-logfile", "-", \
      "--error-logfile", "-", \
@@ -100,9 +96,9 @@ Set in Dokploy dashboard:
 
 ## Best Practices Implemented
 
-✅ Multi-stage build for optimization
+✅ Single-stage build for simplicity
 ✅ Non-root user for security
-✅ Virtual environment for dependency isolation
+✅ Build dependencies removed after installation
 ✅ Health checks for monitoring
 ✅ Proper logging configuration
 ✅ Minimal base image (Alpine)
@@ -113,7 +109,7 @@ Set in Dokploy dashboard:
 
 ## Next Steps
 
-1. Test locally with `docker build -t worstcaptcha . && docker run -p 5000:5000 worstcaptcha`
+1. Test locally with `docker build -t worstcaptcha . && docker run -p 5005:5005 worstcaptcha`
 2. Push to Git repository
 3. Deploy to Dokploy using CLI or Dashboard
 4. Monitor in Dokploy dashboard

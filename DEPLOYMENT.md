@@ -60,7 +60,7 @@ dokploy deploy
 3. Connect your Git repository
 4. Configure the following:
    - **Build Command**: `docker build -t worstcaptcha .`
-   - **Port**: `5000`
+   - **Port**: `5005`
    - **Health Check Path**: `/`
 5. Click "Deploy"
 
@@ -78,7 +78,7 @@ Dokploy will automatically detect the port from the Dockerfile. You can set addi
 The Dockerfile uses Gunicorn with the following configuration:
 
 - **Workers**: 2 (adjust based on your needs)
-- **Bind**: `0.0.0.0:5000`
+- **Bind**: `0.0.0.0:5005`
 - **Timeout**: 120 seconds
 - **Access Log**: stdout (visible in Dokploy logs)
 
@@ -87,7 +87,7 @@ To adjust Gunicorn settings, modify the `CMD` in the Dockerfile:
 ```dockerfile
 CMD ["gunicorn", \
      "--workers", "4", \          # Increase for more traffic
-     "--bind", "0.0.0.0:5000", \
+     "--bind", "0.0.0.0:5005", \
      "--timeout", "120", \
      "--access-logfile", "-", \
      "--error-logfile", "-", \
@@ -100,7 +100,7 @@ The Dockerfile includes a health check that Dokploy uses to monitor application 
 
 ```dockerfile
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:5000/ || exit 1
+    CMD curl -f http://localhost:5005/ || exit 1
 ```
 
 Dokploy will automatically:
@@ -126,14 +126,14 @@ dokploy logs
 ```
 
 Common issues:
-- Port already in use (check if another service is using port 5000)
+- Port already in use (check if another service is using port 5005)
 - Missing dependencies (ensure requirements.txt is up to date)
 - Permission errors (Dockerfile handles this with non-root user)
 
 ### Health Check Failing
 
 If health checks are failing:
-1. Verify the application is running: `curl http://localhost:5000/`
+1. Verify the application is running: `curl http://localhost:5005/`
 2. Check application logs in Dokploy dashboard
 3. Ensure the health check endpoint is accessible
 
@@ -177,7 +177,7 @@ Dokploy provides:
 
 ## Files Overview
 
-- `Dockerfile`: Multi-stage production Docker configuration
+- `Dockerfile`: Production Docker configuration
 - `.dockerignore`: Excludes unnecessary files from Docker context
 - `requirements.txt`: Python dependencies including Gunicorn
 - `app.py`: Flask application entry point

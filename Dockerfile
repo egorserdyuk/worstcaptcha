@@ -1,12 +1,12 @@
-# syntax=docker/dockerfile:1
-
-# Stage 1: Builder - Install dependencies
-FROM python:3.14-alpine AS builder
+# Production image - Python 3.14 Alpine
+FROM python:3.14-alpine
 
 # Set environment variables
 ENV LANG=C.UTF-8
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV FLASK_APP=app.py
+ENV FLASK_ENV=production
 
 # Set work directory
 WORKDIR /app
@@ -21,6 +21,7 @@ RUN ALPINE_VER=$(cut -d'.' -f1,2 /etc/alpine-release) && \
 RUN apk add --no-cache \
     gcc \
     musl-dev \
+    curl \
     && rm -rf /var/cache/apk/*
 
 # Copy requirements files
@@ -31,35 +32,12 @@ RUN pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ --upgr
     pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ -r requirements.txt && \
     pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ gunicorn
 
-# Stage 2: Production - Final image
-FROM python:3.14-alpine
-
-# Set environment variables
-ENV PYTHONUNBUFFERED=1
-ENV FLASK_APP=app.py
-ENV FLASK_ENV=production
-
-# Set work directory
-WORKDIR /app
-
-# ==================== Yandex Alpine Mirror ====================
-RUN ALPINE_VER=$(cut -d'.' -f1,2 /etc/alpine-release) && \
-    echo "https://mirror.yandex.ru/mirrors/alpine/v${ALPINE_VER}/main" > /etc/apk/repositories && \
-    echo "https://mirror.yandex.ru/mirrors/alpine/v${ALPINE_VER}/community" >> /etc/apk/repositories
-# ===========================================================================
-
-# Install runtime system dependencies only
-RUN apk add --no-cache \
-    curl \
-    && rm -rf /var/cache/apk/*
+# Remove build dependencies to reduce image size
+RUN apk del gcc musl-dev
 
 # Create non-root user for security
 RUN addgroup -g 1001 -S appgroup && \
     adduser -S appuser -u 1001 -G appgroup
-
-# Copy installed packages from builder stage
-COPY --from=builder /usr/lib/python3.14/site-packages /usr/lib/python3.14/site-packages
-COPY --from=builder /usr/local/lib/python3.14/site-packages /usr/local/lib/python3.14/site-packages
 
 # Copy application code
 COPY app.py ./
