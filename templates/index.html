@@ -28,13 +28,31 @@
                     <label>Comment:</label>
                     <div id="editor"></div>
                 </div>
+
                 <button id="submit-comment" class="btn btn-primary">
                     <span class="btn-icon">💬</span>
                     Leave a Comment
                 </button>
+
+                <!-- Captcha Checkbox (Google reCAPTCHA style) - Inside Form -->
+                <div id="captcha-checkbox" class="captcha-checkbox">
+                    <div class="checkbox-container">
+                        <input type="checkbox" id="captcha-check"
+                            class="checkbox-input">
+                        <label for="captcha-check" class="checkbox-label">
+                            <span class="checkbox-custom"></span>
+                            <span class="checkbox-text">I'm not a robot</span>
+                        </label>
+                        <div class="checkbox-logo">
+                            <span class="logo-icon">🛡️</span>
+                            <span class="logo-text">Worst Captcha</span>
+                        </div>
+                    </div>
+                </div>
+
             </div>
 
-            <!-- Captcha Widget - Google reCAPTCHA Style (Compact) -->
+            <!-- Captcha Widget - Google reCAPTCHA Style (Popup) -->
             <div id="captcha-widget" class="captcha-widget hidden">
                 <div class="captcha-popup">
                     <div class="captcha-header">
@@ -64,22 +82,6 @@
                         <div class="captcha-progress">
                             <div class="progress-bar" id="progress-bar"></div>
                         </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Captcha Checkbox (Google reCAPTCHA style) -->
-            <div id="captcha-checkbox" class="captcha-checkbox">
-                <div class="checkbox-container">
-                    <input type="checkbox" id="captcha-check"
-                        class="checkbox-input">
-                    <label for="captcha-check" class="checkbox-label">
-                        <span class="checkbox-custom"></span>
-                        <span class="checkbox-text">I'm not a robot</span>
-                    </label>
-                    <div class="checkbox-logo">
-                        <span class="logo-icon">🛡️</span>
-                        <span class="logo-text">Worst Captcha</span>
                     </div>
                 </div>
             </div>
