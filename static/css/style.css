@@ -586,13 +586,13 @@ header .subtitle {
 .image-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 8px;
+    gap: 10px;
     background: #f8f9fa;
-    padding: 12px;
+    padding: 16px;
     border-radius: 8px;
     margin-bottom: 15px;
     width: 100%;
-    max-width: 350px;
+    max-width: 500px;
 }
 
 .image-cell {
@@ -604,6 +604,7 @@ header .subtitle {
     position: relative;
     overflow: hidden;
     transition: all 0.2s;
+    min-height: 80px;
 }
 
 .image-cell:hover {
@@ -861,5 +862,16 @@ header .subtitle {
     .mic-status {
         font-size: 0.85rem;
         padding: 8px;
+    }
+    
+    /* Step 3 mobile improvements */
+    .image-grid {
+        max-width: 100%;
+        gap: 8px;
+        padding: 12px;
+    }
+    
+    .image-cell {
+        min-height: 70px;
     }
 }
