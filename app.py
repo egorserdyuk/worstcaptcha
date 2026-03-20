@@ -7,12 +7,22 @@ from flask import Flask, render_template, request, jsonify, session
 import random
 import time
 from datetime import datetime
+import os
 
 app = Flask(__name__)
 app.secret_key = "worst-captcha-secret-key-2024"
 
 # In-memory storage for comments (use database in production)
 comments = []
+
+# Image categories for step 3
+IMAGE_CATEGORIES = {
+    "beer": "static/images/beer/",
+    "cocktails": "static/images/cocktails/",
+    "soda": "static/images/soda/",
+    "vodka": "static/images/vodka/",
+    "water": "static/images/water/",
+}
 
 # Captcha instructions pool
 CAPTCHA_INSTRUCTIONS = [
@@ -204,6 +214,143 @@ def captcha_status():
     )
 
 
+@app.route("/api/captcha/step3/generate", methods=["POST"])
+def generate_step3():
+    """Generate image grid for step 3"""
+    data = request.json or {}
+    is_18_plus = data.get("is_18_plus", False)
+
+    if not is_18_plus:
+        # User is under 18, skip this step
+        session["step3_skipped"] = True
+        session["step3_score"] = 0
+        return jsonify(
+            {"skipped": True, "message": "Step 3 skipped for users under 18"}
+        )
+
+    # User is 18+, generate image grid
+    session["step3_skipped"] = False
+    session["step3_score"] = 0
+    session["step3_attempts"] = 0
+
+    # Get all images from each category
+    all_images = []
+    for category, folder in IMAGE_CATEGORIES.items():
+        if os.path.exists(folder):
+            images = [
+                f
+                for f in os.listdir(folder)
+                if f.endswith((".webp", ".jpg", ".jpeg", ".png"))
+            ]
+            for img in images:
+                all_images.append(
+                    {
+                        "category": category,
+                        "filename": img,
+                        "path": f"/static/images/{category}/{img}",
+                    }
+                )
+
+    # Shuffle and select 16 images for 4x4 grid
+    random.shuffle(all_images)
+    selected_images = all_images[:16]
+
+    # Store in session for verification
+    session["step3_images"] = selected_images
+
+    # Select first category to find
+    categories = list(IMAGE_CATEGORIES.keys())
+    random.shuffle(categories)
+    session["step3_current_category"] = categories[0]
+    session["step3_categories_to_find"] = categories
+    session["step3_category_index"] = 0
+
+    return jsonify(
+        {
+            "skipped": False,
+            "images": selected_images,
+            "current_category": categories[0],
+            "total_categories": len(categories),
+        }
+    )
+
+
+@app.route("/api/captcha/step3/verify", methods=["POST"])
+def verify_step3():
+    """Verify image selection for step 3"""
+    data = request.json
+    selected_indices = data.get("selected_indices", [])
+
+    if session.get("step3_skipped", False):
+        return jsonify(
+            {"valid": True, "skipped": True, "message": "Step 3 was skipped"}
+        )
+
+    # Get current category and images
+    current_category = session.get("step3_current_category")
+    images = session.get("step3_images", [])
+
+    if not current_category or not images:
+        return jsonify({"valid": False, "error": "No step 3 session"}), 400
+
+    # Find all indices that belong to the current category
+    correct_indices = [
+        i for i, img in enumerate(images) if img["category"] == current_category
+    ]
+
+    # Check if user selected all correct images and no wrong ones
+    selected_set = set(selected_indices)
+    correct_set = set(correct_indices)
+
+    is_correct = selected_set == correct_set
+
+    if is_correct:
+        session["step3_score"] = session.get("step3_score", 0) + 1
+
+    session["step3_attempts"] = session.get("step3_attempts", 0) + 1
+
+    # Move to next category
+    session["step3_category_index"] = session.get("step3_category_index", 0) + 1
+    category_index = session["step3_category_index"]
+    categories = session.get("step3_categories_to_find", [])
+
+    if category_index < len(categories):
+        # More categories to find
+        session["step3_current_category"] = categories[category_index]
+        return jsonify(
+            {
+                "valid": is_correct,
+                "correct_indices": correct_indices,
+                "next_category": categories[category_index],
+                "completed": False,
+                "score": session["step3_score"],
+            }
+        )
+    else:
+        # All categories completed
+        return jsonify(
+            {
+                "valid": is_correct,
+                "correct_indices": correct_indices,
+                "completed": True,
+                "score": session["step3_score"],
+                "total_categories": len(categories),
+            }
+        )
+
+
+@app.route("/api/captcha/step3/status", methods=["GET"])
+def step3_status():
+    """Get current step 3 status"""
+    return jsonify(
+        {
+            "skipped": session.get("step3_skipped", False),
+            "score": session.get("step3_score", 0),
+            "attempts": session.get("step3_attempts", 0),
+        }
+    )
+
+
 @app.route("/api/comments", methods=["GET"])
 def get_comments():
     """Get all comments"""
@@ -219,6 +366,15 @@ def add_comment():
     if "captcha_seed" not in session or session.get("captcha_score", 0) < 25:
         return jsonify({"error": "Captcha not completed"}), 403
 
+    # Check step 3 completion (if not skipped)
+    step3_skipped = session.get("step3_skipped", False)
+    step3_score = session.get("step3_score", 0)
+
+    # Calculate total score: step1 (25) + step2 (3) + step3 (5 categories)
+    # User needs at least 2 points from step 3 if they did it
+    if not step3_skipped and step3_score < 2:
+        return jsonify({"error": "Step 3 not completed successfully"}), 403
+
     comment = {
         "id": len(comments) + 1,
         "author": data.get("author", "Anonymous"),
@@ -232,6 +388,13 @@ def add_comment():
     # Clear captcha session
     session.pop("captcha_seed", None)
     session.pop("captcha_score", None)
+    session.pop("step3_skipped", None)
+    session.pop("step3_score", None)
+    session.pop("step3_attempts", None)
+    session.pop("step3_images", None)
+    session.pop("step3_current_category", None)
+    session.pop("step3_categories_to_find", None)
+    session.pop("step3_category_index", None)
 
     return jsonify({"success": True, "comment": comment})
 

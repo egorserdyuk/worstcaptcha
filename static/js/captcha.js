@@ -47,6 +47,15 @@ class WorstCaptcha {
         this.step2TimeLimit = 60; // 1 minute for step 2
         this.step2StartTime = null;
         
+        // Step 3: Image selection
+        this.step3Images = [];
+        this.step3CurrentCategory = '';
+        this.step3SelectedIndices = [];
+        this.step3Score = 0;
+        this.step3TotalCategories = 5;
+        this.step3Is18Plus = false;
+        this.step3Skipped = false;
+        
         // Initialize
         this.init();
     }
@@ -762,13 +771,13 @@ class WorstCaptcha {
         }
     }
     
-    // Step 3: Placeholder (to be implemented)
-    startStep3() {
-        // Show step 3 UI
-        this.showStep3UI();
+    // Step 3: Image Selection with Age Verification
+    async startStep3() {
+        // Show age verification first
+        this.showAgeVerification();
     }
     
-    showStep3UI() {
+    showAgeVerification() {
         // Hide step 1 instruction and status
         document.getElementById('captcha-instruction').classList.add('hidden');
         document.querySelector('.captcha-status').classList.add('hidden');
@@ -776,24 +785,183 @@ class WorstCaptcha {
         
         const grid = document.getElementById('captcha-grid');
         grid.innerHTML = `
-            <div class="step2-container">
-                <h3>Step 3: Coming Soon</h3>
-                <p>This step is not yet implemented. You've completed the captcha!</p>
-                <button id="step3-complete-btn" class="btn btn-primary">✅ Complete Captcha</button>
+            <div class="step3-container">
+                <h3>Step 3: Age Verification</h3>
+                <p>Before continuing, please confirm your age.</p>
+                <div class="age-verification">
+                    <p>Are you 18 years or older?</p>
+                    <div class="age-buttons">
+                        <button id="age-yes-btn" class="btn btn-primary">Yes, I'm 18+</button>
+                        <button id="age-no-btn" class="btn btn-secondary">No, I'm under 18</button>
+                    </div>
+                </div>
             </div>
         `;
         
-        document.getElementById('step3-complete-btn').addEventListener('click', () => {
-            const captchaCheckbox = document.getElementById('captcha-checkbox');
-            captchaCheckbox.classList.add('completed');
+        document.getElementById('age-yes-btn').addEventListener('click', () => this.handleAgeVerification(true));
+        document.getElementById('age-no-btn').addEventListener('click', () => this.handleAgeVerification(false));
+    }
+    
+    async handleAgeVerification(is18Plus) {
+        this.step3Is18Plus = is18Plus;
+        
+        try {
+            const response = await fetch('/api/captcha/step3/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ is_18_plus: is18Plus })
+            });
             
-            const checkbox = document.getElementById('captcha-check');
-            checkbox.checked = true;
+            const data = await response.json();
             
-            alert('🎉 Captcha completed! You can now submit your comment.');
-            this.hideCaptcha();
-            this.submitComment();
+            if (data.skipped) {
+                // User is under 18, skip this step
+                this.step3Skipped = true;
+                this.completeCaptcha();
+            } else {
+                // User is 18+, show image grid
+                this.step3Images = data.images;
+                this.step3CurrentCategory = data.current_category;
+                this.step3TotalCategories = data.total_categories;
+                this.step3Score = 0;
+                this.step3SelectedIndices = [];
+                this.showImageGrid();
+            }
+        } catch (error) {
+            console.error('Failed to generate step 3:', error);
+        }
+    }
+    
+    showImageGrid() {
+        const grid = document.getElementById('captcha-grid');
+        
+        // Create 4x4 grid HTML
+        let gridHTML = `
+            <div class="step3-container">
+                <h3>Step 3: Image Selection</h3>
+                <p class="step3-instruction">Find all <span id="target-category" class="category-highlight">${this.step3CurrentCategory}</span> images</p>
+                <div class="image-grid">
+        `;
+        
+        // Add 16 image cells
+        for (let i = 0; i < 16; i++) {
+            const image = this.step3Images[i];
+            gridHTML += `
+                <div class="image-cell" data-index="${i}">
+                    <img src="${image.path}" alt="${image.category}" loading="lazy">
+                    <div class="selection-overlay"></div>
+                </div>
+            `;
+        }
+        
+        gridHTML += `
+                </div>
+                <div class="step3-controls">
+                    <div class="step3-progress">
+                        <span>Category: <span id="category-progress">1</span>/${this.step3TotalCategories}</span>
+                        <span>Score: <span id="step3-score">0</span></span>
+                    </div>
+                    <button id="step3-submit-btn" class="btn btn-primary">Submit Selection</button>
+                </div>
+            </div>
+        `;
+        
+        grid.innerHTML = gridHTML;
+        
+        // Add click handlers to image cells
+        document.querySelectorAll('.image-cell').forEach(cell => {
+            cell.addEventListener('click', (e) => this.handleImageClick(e));
         });
+        
+        // Add submit handler
+        document.getElementById('step3-submit-btn').addEventListener('click', () => this.submitImageSelection());
+    }
+    
+    handleImageClick(event) {
+        const cell = event.currentTarget;
+        const index = parseInt(cell.dataset.index);
+        
+        // Toggle selection
+        if (this.step3SelectedIndices.includes(index)) {
+            this.step3SelectedIndices = this.step3SelectedIndices.filter(i => i !== index);
+            cell.classList.remove('selected');
+        } else {
+            this.step3SelectedIndices.push(index);
+            cell.classList.add('selected');
+        }
+    }
+    
+    async submitImageSelection() {
+        try {
+            const response = await fetch('/api/captcha/step3/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    selected_indices: this.step3SelectedIndices
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.valid) {
+                // Correct selection
+                this.step3Score = data.score;
+                document.getElementById('step3-score').textContent = this.step3Score;
+                
+                if (data.completed) {
+                    // All categories completed
+                    this.completeCaptcha();
+                } else {
+                    // Move to next category
+                    this.step3CurrentCategory = data.next_category;
+                    this.step3SelectedIndices = [];
+                    document.getElementById('target-category').textContent = this.step3CurrentCategory;
+                    document.getElementById('category-progress').textContent =
+                        parseInt(document.getElementById('category-progress').textContent) + 1;
+                    
+                    // Clear selections
+                    document.querySelectorAll('.image-cell').forEach(cell => {
+                        cell.classList.remove('selected');
+                    });
+                }
+            } else {
+                // Wrong selection - show correct indices
+                this.showCorrectSelection(data.correct_indices);
+            }
+        } catch (error) {
+            console.error('Failed to verify selection:', error);
+        }
+    }
+    
+    showCorrectSelection(correctIndices) {
+        // Highlight correct images
+        document.querySelectorAll('.image-cell').forEach((cell, index) => {
+            if (correctIndices.includes(index)) {
+                cell.classList.add('correct');
+            } else if (this.step3SelectedIndices.includes(index)) {
+                cell.classList.add('incorrect');
+            }
+        });
+        
+        // Clear selections after a delay
+        setTimeout(() => {
+            this.step3SelectedIndices = [];
+            document.querySelectorAll('.image-cell').forEach(cell => {
+                cell.classList.remove('selected', 'correct', 'incorrect');
+            });
+        }, 1500);
+    }
+    
+    completeCaptcha() {
+        const captchaCheckbox = document.getElementById('captcha-checkbox');
+        captchaCheckbox.classList.add('completed');
+        
+        const checkbox = document.getElementById('captcha-check');
+        checkbox.checked = true;
+        
+        alert('🎉 Captcha completed! You can now submit your comment.');
+        this.hideCaptcha();
+        this.submitComment();
     }
     
     async submitComment() {
