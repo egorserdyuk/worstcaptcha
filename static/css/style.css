@@ -586,13 +586,15 @@ header .subtitle {
 .image-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 10px;
+    gap: 12px;
     background: #f8f9fa;
     padding: 16px;
     border-radius: 8px;
     margin-bottom: 15px;
     width: 100%;
-    max-width: 500px;
+    max-width: 400px;
+    margin-left: auto;
+    margin-right: auto;
 }
 
 .image-cell {
@@ -604,7 +606,9 @@ header .subtitle {
     position: relative;
     overflow: hidden;
     transition: all 0.2s;
-    min-height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .image-cell:hover {
@@ -615,8 +619,9 @@ header .subtitle {
 .image-cell img {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;
     border-radius: 5px;
+    display: block;
 }
 
 .image-cell .selection-overlay {
@@ -872,6 +877,6 @@ header .subtitle {
     }
     
     .image-cell {
-        min-height: 70px;
+        min-height: auto;
     }
 }
