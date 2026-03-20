@@ -391,27 +391,27 @@ header .subtitle {
 }
 
 .shape.square {
-    width: 60%;
-    height: 60%;
+    width: 70%;
+    height: 70%;
 }
 
 .shape.circle {
-    width: 60%;
-    height: 60%;
+    width: 70%;
+    height: 70%;
     border-radius: 50%;
 }
 
 .shape.triangle {
     width: 0;
     height: 0;
-    border-left: 30% solid transparent;
-    border-right: 30% solid transparent;
-    border-bottom: 50% solid;
+    border-left: 35px solid transparent;
+    border-right: 35px solid transparent;
+    border-bottom: 60px solid;
 }
 
 .shape.optical {
-    width: 60%;
-    height: 60%;
+    width: 70%;
+    height: 70%;
     border-radius: 50%;
     background: conic-gradient(from 0deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #9400d3, #ff0000);
     animation: opticalSpin 2s linear infinite;

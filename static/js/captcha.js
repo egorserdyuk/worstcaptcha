@@ -195,9 +195,9 @@ class WorstCaptcha {
             shape.x += shape.speed_x;
             shape.y += shape.speed_y;
             
-            // Bounce off walls
-            if (shape.x < 0 || shape.x > 500) shape.speed_x *= -1;
-            if (shape.y < 0 || shape.y > 500) shape.speed_y *= -1;
+            // Bounce off walls (limit movement to stay within cell)
+            if (shape.x < -20 || shape.x > 20) shape.speed_x *= -1;
+            if (shape.y < -20 || shape.y > 20) shape.speed_y *= -1;
             
             // Update position
             const cell = document.querySelector(`[data-id="${index}"]`);
