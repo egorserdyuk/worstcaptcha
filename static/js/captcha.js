@@ -53,7 +53,15 @@ class WorstCaptcha {
         // Checkbox interaction
         document.getElementById('captcha-check').addEventListener('change', (e) => {
             if (e.target.checked) {
-                this.showCaptcha();
+                // Add spinning animation inside checkbox
+                const checkboxCustom = document.querySelector('.checkbox-custom');
+                checkboxCustom.classList.add('spinning');
+                
+                // Show captcha after a brief delay (like Google reCAPTCHA)
+                setTimeout(() => {
+                    checkboxCustom.classList.remove('spinning');
+                    this.showCaptcha();
+                }, 800);
             }
         });
         
@@ -86,8 +94,19 @@ class WorstCaptcha {
             cancelAnimationFrame(this.animationId);
         }
         
-        // Reset checkbox
-        document.getElementById('captcha-check').checked = false;
+        // Reset checkbox and clean check field
+        this.resetCheckbox();
+    }
+    
+    resetCheckbox() {
+        const checkbox = document.getElementById('captcha-check');
+        checkbox.checked = false;
+        const checkboxCustom = document.querySelector('.checkbox-custom');
+        checkboxCustom.classList.remove('spinning');
+        
+        // Remove completed class
+        const captchaCheckbox = document.getElementById('captcha-checkbox');
+        captchaCheckbox.classList.remove('completed');
     }
     
     async generateCaptcha() {
@@ -416,15 +435,22 @@ class WorstCaptcha {
         clearInterval(this.instructionTimer);
         
         if (completed) {
-            // Show success message
+            // Show success message and mark checkbox as completed
+            const captchaCheckbox = document.getElementById('captcha-checkbox');
+            captchaCheckbox.classList.add('completed');
+            
+            // Check the checkbox to show checkmark
+            const checkbox = document.getElementById('captcha-check');
+            checkbox.checked = true;
+            
             alert('🎉 Captcha completed! You can now submit your comment.');
             this.hideCaptcha();
             this.submitComment();
         } else {
-            // Time expired - restart
-            alert('⏰ Time expired! Restarting captcha...');
-            this.generateCaptcha();
-            this.startGame();
+            // Time expired - reset and close
+            alert('⏰ Time expired! Please try again.');
+            this.resetCheckbox();
+            this.hideCaptcha();
         }
     }
     

@@ -180,8 +180,38 @@ header .subtitle {
     border-color: #4285f4;
 }
 
+/* Hide checkmark until captcha is completed */
 .checkbox-input:checked + .checkbox-label .checkbox-custom::after {
+    display: none;
+}
+
+/* Show checkmark only when captcha is completed */
+.captcha-checkbox.completed .checkbox-input:checked + .checkbox-label .checkbox-custom::after {
     display: block;
+}
+
+/* Spinning wheel inside checkbox */
+.checkbox-custom.spinning::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 16px;
+    height: 16px;
+    margin: -8px 0 0 -8px;
+    border: 2px solid #4285f4;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+.checkbox-custom.spinning::after {
+    display: none;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
 }
 
 .checkbox-text {
