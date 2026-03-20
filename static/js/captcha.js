@@ -506,18 +506,12 @@ class WorstCaptcha {
         this.step2Notes = noteFrequencies.sort(() => Math.random() - 0.5);
         this.step2CurrentNoteIndex = 0;
         this.step2MatchedNotes = 0;
-        this.step2StartTime = Date.now();
         
         // Show step 2 UI
         this.showStep2UI();
         
-        // Request microphone access
-        await this.setupMicrophone();
-        
-        // Start step 2 timer
-        this.updateStep2Timer();
-        
-        // Don't play note automatically - let user click "Play Note Again" button when ready
+        // Don't request microphone access automatically - let user click "Access Microphone" button
+        // Timer will start after microphone access is granted
     }
     
     // Convert frequency (Hz) to note name
@@ -556,9 +550,12 @@ class WorstCaptcha {
                     <span>Notes matched: <span id="notes-matched">0</span>/3</span>
                     <span id="step2-time" style="margin-left: 20px; color: #4CAF50;">Time: ${this.step2TimeLimit.toFixed(1)}s</span>
                 </div>
-                <div class="mic-status" id="mic-status">🎤 Requesting microphone access...</div>
+                <button id="access-mic-btn" class="btn btn-primary">🎤 Access Microphone</button>
+                <div class="mic-status" id="mic-status">Click the button above to grant microphone access</div>
             </div>
         `;
+        
+        document.getElementById('access-mic-btn').addEventListener('click', () => this.setupMicrophone());
     }
     
     updateStep2Timer() {
@@ -624,10 +621,21 @@ class WorstCaptcha {
             source.connect(this.step2Analyser);
             
             this.step2IsListening = true;
+            this.step2StartTime = Date.now();
             this.detectPitch();
             
+            // Update UI to show microphone is active
             document.getElementById('mic-status').textContent = '🎤 Microphone active - sing the note!';
             document.getElementById('mic-status').style.color = '#4CAF50';
+            
+            // Hide the access microphone button
+            const accessMicBtn = document.getElementById('access-mic-btn');
+            if (accessMicBtn) {
+                accessMicBtn.style.display = 'none';
+            }
+            
+            // Start step 2 timer
+            this.updateStep2Timer();
             
         } catch (err) {
             console.error('Microphone access denied:', err);
