@@ -514,6 +514,17 @@ class WorstCaptcha {
         this.playTargetNote();
     }
     
+    // Convert frequency (Hz) to note name
+    frequencyToNote(frequency) {
+        const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+        const A4 = 440;
+        const semitones = 12 * Math.log2(frequency / A4);
+        const noteIndex = Math.round(semitones) + 9; // A4 is index 9
+        const octave = Math.floor((noteIndex + 3) / 12) + 4; // Calculate octave
+        const noteName = noteNames[(noteIndex % 12 + 12) % 12]; // Ensure positive index
+        return noteName + octave;
+    }
+    
     showStep2UI() {
         // Hide step 1 instruction and status
         document.getElementById('captcha-instruction').classList.add('hidden');
@@ -528,11 +539,11 @@ class WorstCaptcha {
                 <div class="note-display">
                     <div class="target-note">
                         <span>Target Note:</span>
-                        <span id="target-note-freq">${this.step2Notes[0]} Hz</span>
+                        <span id="target-note-freq">${this.frequencyToNote(this.step2Notes[0])}</span>
                     </div>
                     <div class="user-note">
                         <span>Your Pitch:</span>
-                        <span id="user-note-freq">-- Hz</span>
+                        <span id="user-note-freq">--</span>
                     </div>
                 </div>
                 <div class="note-progress">
@@ -612,7 +623,7 @@ class WorstCaptcha {
         oscillator.start(this.audioContext.currentTime);
         oscillator.stop(this.audioContext.currentTime + 1);
         
-        document.getElementById('target-note-freq').textContent = `${this.step2TargetFrequency} Hz`;
+        document.getElementById('target-note-freq').textContent = this.frequencyToNote(this.step2TargetFrequency);
     }
     
     detectPitch() {
@@ -626,7 +637,7 @@ class WorstCaptcha {
         const pitch = this.autoCorrelate(buffer, this.audioContext.sampleRate);
         
         if (pitch > 0) {
-            document.getElementById('user-note-freq').textContent = `${Math.round(pitch)} Hz`;
+            document.getElementById('user-note-freq').textContent = this.frequencyToNote(pitch);
             
             // Check if pitch matches target (within 10% tolerance)
             const tolerance = this.step2TargetFrequency * 0.1;
