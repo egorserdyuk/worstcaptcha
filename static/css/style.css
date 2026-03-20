@@ -161,6 +161,9 @@ header .subtitle {
     background: white;
     position: relative;
     transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .checkbox-custom::after {
@@ -193,12 +196,8 @@ header .subtitle {
 /* Spinning wheel inside checkbox */
 .checkbox-custom.spinning::before {
     content: '';
-    position: absolute;
-    top: 50%;
-    left: 50%;
     width: 16px;
     height: 16px;
-    margin: -8px 0 0 -8px;
     border: 2px solid #4285f4;
     border-top-color: transparent;
     border-radius: 50%;
