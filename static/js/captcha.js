@@ -510,8 +510,7 @@ class WorstCaptcha {
         // Request microphone access
         await this.setupMicrophone();
         
-        // Play first target note
-        this.playTargetNote();
+        // Don't play note automatically - let user click "Play Note Again" button when ready
     }
     
     // Convert frequency (Hz) to note name
@@ -535,7 +534,7 @@ class WorstCaptcha {
         grid.innerHTML = `
             <div class="step2-container">
                 <h3>Step 2: Sing the Notes</h3>
-                <p>Listen to the note, then sing it into your microphone.</p>
+                <p>Click the button below to hear the note, then sing it into your microphone.</p>
                 <div class="note-display">
                     <div class="target-note">
                         <span>Target Note:</span>
@@ -549,7 +548,7 @@ class WorstCaptcha {
                 <div class="note-progress">
                     <span>Notes matched: <span id="notes-matched">0</span>/3</span>
                 </div>
-                <button id="play-note-btn" class="btn btn-secondary">🔊 Play Note Again</button>
+                <button id="play-note-btn" class="btn btn-secondary">🔊 Play Note</button>
                 <div class="mic-status" id="mic-status">🎤 Requesting microphone access...</div>
             </div>
         `;
