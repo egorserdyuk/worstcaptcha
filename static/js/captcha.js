@@ -777,6 +777,8 @@ class WorstCaptcha {
         } else {
             // Move to next note
             this.step2CurrentNoteIndex++;
+            // Update the target frequency for pitch detection
+            this.step2TargetFrequency = this.step2Notes[this.step2CurrentNoteIndex];
             // Update the target note display without playing audio
             document.getElementById('target-note-freq').textContent = this.frequencyToNote(this.step2Notes[this.step2CurrentNoteIndex]);
         }
