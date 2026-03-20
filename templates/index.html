@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Worst Captcha - Comment Wall</title>
+        <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css"
+            rel="stylesheet">
+        <link rel="stylesheet" href="/static/css/style.css">
+    </head>
+    <body>
+        <div class="container">
+            <header>
+                <h1>💬 Comment Wall</h1>
+                <p class="subtitle">Leave your thoughts... if you can prove
+                    you're human</p>
+            </header>
+
+            <!-- Comment Form Section -->
+            <div class="comment-form-section">
+                <h2>Leave a Comment</h2>
+                <div class="form-group">
+                    <label for="author">Name:</label>
+                    <input type="text" id="author" placeholder="Your name"
+                        value="Anonymous">
+                </div>
+                <div class="form-group">
+                    <label>Comment:</label>
+                    <div id="editor"></div>
+                </div>
+                <button id="submit-comment" class="btn btn-primary">
+                    <span class="btn-icon">💬</span>
+                    Leave a Comment
+                </button>
+            </div>
+
+            <!-- Captcha Widget - Google reCAPTCHA Style (Compact) -->
+            <div id="captcha-widget" class="captcha-widget hidden">
+                <div class="captcha-popup">
+                    <div class="captcha-header">
+                        <div class="captcha-logo">
+                            <span class="captcha-icon">🛡️</span>
+                            <span class="captcha-title">Worst Captcha</span>
+                        </div>
+                        <button id="captcha-close"
+                            class="captcha-close">&times;</button>
+                    </div>
+
+                    <div class="captcha-content">
+                        <div class="captcha-instruction"
+                            id="captcha-instruction">
+                            Loading...
+                        </div>
+
+                        <div class="captcha-grid" id="captcha-grid">
+                            <!-- 6x6 grid will be generated here -->
+                        </div>
+
+                        <div class="captcha-status">
+                            <span id="captcha-score">Score: 0/25</span>
+                            <span id="captcha-time">Time: 12s</span>
+                        </div>
+
+                        <div class="captcha-progress">
+                            <div class="progress-bar" id="progress-bar"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Captcha Checkbox (Google reCAPTCHA style) -->
+            <div id="captcha-checkbox" class="captcha-checkbox">
+                <div class="checkbox-container">
+                    <input type="checkbox" id="captcha-check"
+                        class="checkbox-input">
+                    <label for="captcha-check" class="checkbox-label">
+                        <span class="checkbox-custom"></span>
+                        <span class="checkbox-text">I'm not a robot</span>
+                    </label>
+                    <div class="checkbox-logo">
+                        <span class="logo-icon">🛡️</span>
+                        <span class="logo-text">Worst Captcha</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Comments Wall -->
+            <div class="comments-section">
+                <h2>Recent Comments</h2>
+                <div id="comments-list" class="comments-list">
+                    <!-- Comments will be loaded here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Bot Detection Overlay -->
+        <div id="bot-overlay" class="bot-overlay hidden">
+            <div class="bot-message">
+                <span class="bot-icon">🤖</span>
+                <span class="bot-text">YOU ARE BOT!</span>
+            </div>
+        </div>
+
+        <!-- Screen Shake Effect -->
+        <div id="shake-overlay" class="shake-overlay hidden"></div>
+
+        <script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
+        <script src="/static/js/captcha.js"></script>
+        <script src="/static/js/comments.js"></script>
+    </body>
+</html>

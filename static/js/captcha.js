@@ -1,0 +1,512 @@
+/**
+ * Worst Captcha - The Most Annoying Captcha Ever Created
+ * Features:
+ * - 6×6 grid of chaotically crawling shapes
+ * - Instructions that change every 1.8 seconds
+ * - Score exactly 25 correct clicks in 12 seconds
+ * - Wrong click: -3 points, screen shake, "BOT DETECTED" sound
+ * - Cursor disappearing/inverting
+ * - Shapes changing at click time
+ * - Click too fast detection
+ * - White text on white background once per session
+ */
+
+class WorstCaptcha {
+    constructor() {
+        this.gridSize = 6;
+        this.shapes = [];
+        this.instructions = [];
+        this.currentInstructionIndex = 0;
+        this.score = 0;
+        this.targetScore = 25;
+        this.timeLimit = 12;
+        this.instructionInterval = 1.8;
+        this.startTime = null;
+        this.isActive = false;
+        this.seed = null;
+        this.whiteTextUsed = false;
+        this.lastClickTime = 0;
+        this.clickCount = 0;
+        this.wrongClicks = 0;
+        
+        // Audio context for bot sound
+        this.audioContext = null;
+        
+        // Animation frame ID
+        this.animationId = null;
+        
+        // Initialize
+        this.init();
+    }
+    
+    init() {
+        // Initialize Quill editor
+        this.quill = new Quill('#editor', {
+            theme: 'snow',
+            placeholder: 'Write your comment here...'
+        });
+        
+        // Set up event listeners
+        document.getElementById('submit-comment').addEventListener('click', () => this.showCaptcha());
+        document.getElementById('captcha-close').addEventListener('click', () => this.hideCaptcha());
+        
+        // Checkbox interaction
+        document.getElementById('captcha-check').addEventListener('change', (e) => {
+            if (e.target.checked) {
+                this.showCaptcha();
+            }
+        });
+        
+        // Load comments
+        this.loadComments();
+    }
+    
+    async showCaptcha() {
+        // Check if comment is empty
+        const content = this.quill.getText().trim();
+        if (!content) {
+            alert('Please write a comment first!');
+            return;
+        }
+        
+        // Show captcha widget
+        document.getElementById('captcha-widget').classList.remove('hidden');
+        
+        // Generate captcha session
+        await this.generateCaptcha();
+        
+        // Start the game
+        this.startGame();
+    }
+    
+    hideCaptcha() {
+        document.getElementById('captcha-widget').classList.add('hidden');
+        this.isActive = false;
+        if (this.animationId) {
+            cancelAnimationFrame(this.animationId);
+        }
+        
+        // Reset checkbox
+        document.getElementById('captcha-check').checked = false;
+    }
+    
+    async generateCaptcha() {
+        try {
+            const response = await fetch('/api/captcha/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            });
+            
+            const data = await response.json();
+            this.seed = data.seed;
+            this.instructions = data.instructions;
+            this.shapes = data.shapes;
+            this.currentInstructionIndex = 0;
+            this.score = 0;
+            this.wrongClicks = 0;
+            this.clickCount = 0;
+            this.whiteTextUsed = false;
+            
+            // Render grid
+            this.renderGrid();
+            
+            // Update instruction
+            this.updateInstruction();
+            
+        } catch (error) {
+            console.error('Failed to generate captcha:', error);
+        }
+    }
+    
+    renderGrid() {
+        const grid = document.getElementById('captcha-grid');
+        grid.innerHTML = '';
+        
+        for (let i = 0; i < 36; i++) {
+            const cell = document.createElement('div');
+            cell.className = 'captcha-cell';
+            cell.dataset.id = i;
+            
+            const shape = this.shapes[i];
+            const shapeEl = document.createElement('div');
+            shapeEl.className = `shape ${shape.type}`;
+            shapeEl.style.backgroundColor = shape.color;
+            
+            if (shape.type === 'triangle') {
+                shapeEl.style.borderBottomColor = shape.color;
+            }
+            
+            cell.appendChild(shapeEl);
+            
+            cell.addEventListener('click', (e) => this.handleCellClick(i, e));
+            
+            grid.appendChild(cell);
+        }
+    }
+    
+    startGame() {
+        this.isActive = true;
+        this.startTime = Date.now();
+        this.lastInstructionChange = Date.now();
+        
+        // Start animation loop
+        this.animate();
+        
+        // Start timer
+        this.updateTimer();
+        
+        // Start instruction change interval
+        this.instructionTimer = setInterval(() => {
+            this.changeInstruction();
+        }, this.instructionInterval * 1000);
+        
+        // Start cursor tricks
+        this.startCursorTricks();
+        
+        // Start shape change tricks
+        this.startShapeChangeTricks();
+    }
+    
+    animate() {
+        if (!this.isActive) return;
+        
+        // Move shapes
+        this.shapes.forEach((shape, index) => {
+            shape.x += shape.speed_x;
+            shape.y += shape.speed_y;
+            
+            // Bounce off walls
+            if (shape.x < 0 || shape.x > 500) shape.speed_x *= -1;
+            if (shape.y < 0 || shape.y > 500) shape.speed_y *= -1;
+            
+            // Update position
+            const cell = document.querySelector(`[data-id="${index}"]`);
+            if (cell) {
+                const shapeEl = cell.querySelector('.shape');
+                shapeEl.style.transform = `translate(-50%, -50%) translate(${shape.x}px, ${shape.y}px) rotate(${shape.rotation}deg) scale(${shape.scale})`;
+                shapeEl.style.opacity = shape.opacity;
+            }
+        });
+        
+        this.animationId = requestAnimationFrame(() => this.animate());
+    }
+    
+    updateTimer() {
+        if (!this.isActive) return;
+        
+        const elapsed = (Date.now() - this.startTime) / 1000;
+        const remaining = Math.max(0, this.timeLimit - elapsed);
+        
+        document.getElementById('captcha-time').textContent = `Time: ${remaining.toFixed(1)}s`;
+        document.getElementById('captcha-score').textContent = `Score: ${this.score}/${this.targetScore}`;
+        
+        // Update progress bar
+        const progress = (this.score / this.targetScore) * 100;
+        document.getElementById('progress-bar').style.width = `${progress}%`;
+        
+        if (remaining <= 0) {
+            this.gameOver(false);
+            return;
+        }
+        
+        requestAnimationFrame(() => this.updateTimer());
+    }
+    
+    changeInstruction() {
+        if (!this.isActive) return;
+        
+        this.currentInstructionIndex = (this.currentInstructionIndex + 1) % this.instructions.length;
+        this.updateInstruction();
+        
+        // White text on white background trick (once per session)
+        if (!this.whiteTextUsed && Math.random() < 0.2) {
+            this.whiteTextUsed = true;
+            const instructionEl = document.getElementById('captcha-instruction');
+            instructionEl.classList.add('white-text');
+            setTimeout(() => {
+                instructionEl.classList.remove('white-text');
+            }, 2000);
+        }
+    }
+    
+    updateInstruction() {
+        const instructionEl = document.getElementById('captcha-instruction');
+        instructionEl.textContent = this.instructions[this.currentInstructionIndex];
+    }
+    
+    async handleCellClick(cellId, event) {
+        if (!this.isActive) return;
+        
+        // Check for too-fast clicking
+        const now = Date.now();
+        const timeBetweenClicks = now - this.lastClickTime;
+        
+        if (this.lastClickTime > 0 && timeBetweenClicks < 150) {
+            this.triggerBotDetection();
+            return;
+        }
+        
+        this.lastClickTime = now;
+        this.clickCount++;
+        
+        // Visual feedback
+        const cell = event.currentTarget;
+        cell.classList.add('clicked');
+        setTimeout(() => cell.classList.remove('clicked'), 300);
+        
+        // Send click to server for verification
+        try {
+            const response = await fetch('/api/captcha/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    shape_id: cellId,
+                    instruction_index: this.currentInstructionIndex,
+                    click_time: now
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.restart) {
+                this.triggerBotDetection();
+                return;
+            }
+            
+            if (data.valid) {
+                this.score = data.score;
+            } else {
+                this.score = data.score;
+                this.wrongClicks = data.wrong_clicks;
+                
+                // Trigger screen shake and sound
+                this.triggerScreenShake();
+                this.playBotSound();
+            }
+            
+            // Check if completed
+            if (data.completed) {
+                this.gameOver(true);
+            }
+            
+        } catch (error) {
+            console.error('Failed to verify click:', error);
+        }
+    }
+    
+    triggerScreenShake() {
+        const overlay = document.getElementById('shake-overlay');
+        overlay.classList.remove('hidden');
+        overlay.classList.add('active');
+        
+        setTimeout(() => {
+            overlay.classList.remove('active');
+            overlay.classList.add('hidden');
+        }, 500);
+    }
+    
+    triggerBotDetection() {
+        this.isActive = false;
+        clearInterval(this.instructionTimer);
+        
+        const overlay = document.getElementById('bot-overlay');
+        overlay.classList.remove('hidden');
+        
+        this.playBotSound();
+        
+        setTimeout(() => {
+            overlay.classList.add('hidden');
+            this.hideCaptcha();
+        }, 2000);
+    }
+    
+    playBotSound() {
+        if (!this.audioContext) {
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        
+        const oscillator = this.audioContext.createOscillator();
+        const gainNode = this.audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(this.audioContext.destination);
+        
+        oscillator.frequency.value = 800;
+        oscillator.type = 'square';
+        
+        gainNode.gain.setValueAtTime(0.3, this.audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.5);
+        
+        oscillator.start(this.audioContext.currentTime);
+        oscillator.stop(this.audioContext.currentTime + 0.5);
+    }
+    
+    startCursorTricks() {
+        // Hide cursor randomly
+        setInterval(() => {
+            if (!this.isActive) return;
+            
+            if (Math.random() < 0.1) {
+                document.body.classList.add('cursor-hidden');
+                setTimeout(() => {
+                    document.body.classList.remove('cursor-hidden');
+                }, 700);
+            }
+        }, 3000);
+        
+        // Invert cursor direction
+        setInterval(() => {
+            if (!this.isActive) return;
+            
+            if (Math.random() < 0.05) {
+                document.body.classList.add('cursor-inverted');
+                setTimeout(() => {
+                    document.body.classList.remove('cursor-inverted');
+                }, 1000);
+            }
+        }, 5000);
+    }
+    
+    startShapeChangeTricks() {
+        setInterval(() => {
+            if (!this.isActive) return;
+            
+            // Randomly change shape colors
+            const randomIndex = Math.floor(Math.random() * 36);
+            const shape = this.shapes[randomIndex];
+            const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F'];
+            shape.color = colors[Math.floor(Math.random() * colors.length)];
+            
+            const cell = document.querySelector(`[data-id="${randomIndex}"]`);
+            if (cell) {
+                const shapeEl = cell.querySelector('.shape');
+                shapeEl.style.backgroundColor = shape.color;
+                if (shape.type === 'triangle') {
+                    shapeEl.style.borderBottomColor = shape.color;
+                }
+            }
+        }, 500);
+        
+        // Randomly change shape types
+        setInterval(() => {
+            if (!this.isActive) return;
+            
+            if (Math.random() < 0.1) {
+                const randomIndex = Math.floor(Math.random() * 36);
+                const shape = this.shapes[randomIndex];
+                const types = ['square', 'circle', 'triangle', 'optical'];
+                shape.type = types[Math.floor(Math.random() * types.length)];
+                
+                const cell = document.querySelector(`[data-id="${randomIndex}"]`);
+                if (cell) {
+                    const shapeEl = cell.querySelector('.shape');
+                    shapeEl.className = `shape ${shape.type}`;
+                    shapeEl.style.backgroundColor = shape.color;
+                    if (shape.type === 'triangle') {
+                        shapeEl.style.borderBottomColor = shape.color;
+                    }
+                }
+            }
+        }, 1000);
+    }
+    
+    gameOver(completed) {
+        this.isActive = false;
+        clearInterval(this.instructionTimer);
+        
+        if (completed) {
+            // Show success message
+            alert('🎉 Captcha completed! You can now submit your comment.');
+            this.hideCaptcha();
+            this.submitComment();
+        } else {
+            // Time expired - restart
+            alert('⏰ Time expired! Restarting captcha...');
+            this.generateCaptcha();
+            this.startGame();
+        }
+    }
+    
+    async submitComment() {
+        const author = document.getElementById('author').value || 'Anonymous';
+        const content = this.quill.getText().trim();
+        const htmlContent = this.quill.root.innerHTML;
+        
+        try {
+            const response = await fetch('/api/comments', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    author: author,
+                    content: content,
+                    html_content: htmlContent
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                // Clear editor
+                this.quill.setText('');
+                
+                // Reload comments
+                this.loadComments();
+            } else {
+                alert('Failed to submit comment: ' + (data.error || 'Unknown error'));
+            }
+            
+        } catch (error) {
+            console.error('Failed to submit comment:', error);
+            alert('Failed to submit comment');
+        }
+    }
+    
+    async loadComments() {
+        try {
+            const response = await fetch('/api/comments');
+            const data = await response.json();
+            
+            const commentsList = document.getElementById('comments-list');
+            commentsList.innerHTML = '';
+            
+            if (data.comments.length === 0) {
+                commentsList.innerHTML = '<p style="text-align: center; color: #999;">No comments yet. Be the first to leave one!</p>';
+                return;
+            }
+            
+            // Display comments in reverse order (newest first)
+            data.comments.reverse().forEach(comment => {
+                const commentEl = document.createElement('div');
+                commentEl.className = 'comment-item';
+                
+                const time = new Date(comment.timestamp);
+                const timeStr = time.toLocaleString();
+                
+                commentEl.innerHTML = `
+                    <div class="comment-header">
+                        <span class="comment-author">${this.escapeHtml(comment.author)}</span>
+                        <span class="comment-time">${timeStr}</span>
+                    </div>
+                    <div class="comment-content">${comment.html_content || this.escapeHtml(comment.content)}</div>
+                `;
+                
+                commentsList.appendChild(commentEl);
+            });
+            
+        } catch (error) {
+            console.error('Failed to load comments:', error);
+        }
+    }
+    
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+}
+
+// Initialize when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+    window.captcha = new WorstCaptcha();
+});
