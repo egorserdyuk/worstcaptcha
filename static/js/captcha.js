@@ -534,7 +534,7 @@ class WorstCaptcha {
         grid.innerHTML = `
             <div class="step2-container">
                 <h3>Step 2: Sing the Notes</h3>
-                <p>Click the button below to hear the note, then sing it into your microphone.</p>
+                <p>You must sing the note shown below. No audio preview is available - use your musical knowledge!</p>
                 <div class="note-display">
                     <div class="target-note">
                         <span>Target Note:</span>
@@ -548,12 +548,9 @@ class WorstCaptcha {
                 <div class="note-progress">
                     <span>Notes matched: <span id="notes-matched">0</span>/3</span>
                 </div>
-                <button id="play-note-btn" class="btn btn-secondary">🔊 Play Note</button>
                 <div class="mic-status" id="mic-status">🎤 Requesting microphone access...</div>
             </div>
         `;
-        
-        document.getElementById('play-note-btn').addEventListener('click', () => this.playTargetNote());
     }
     
     async setupMicrophone() {
@@ -708,7 +705,8 @@ class WorstCaptcha {
         } else {
             // Move to next note
             this.step2CurrentNoteIndex++;
-            setTimeout(() => this.playTargetNote(), 1000);
+            // Update the target note display without playing audio
+            document.getElementById('target-note-freq').textContent = this.frequencyToNote(this.step2Notes[this.step2CurrentNoteIndex]);
         }
     }
     
