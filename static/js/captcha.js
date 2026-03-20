@@ -995,7 +995,7 @@ class WorstCaptcha {
             this.hideCaptcha();
             this.submitComment();
         } else {
-            alert('❌ Captcha failed! You need at least 2 points to pass. Please try again.');
+            alert('❌ Captcha failed! Please try again.');
             this.hideCaptcha();
             this.resetCheckbox();
         }
