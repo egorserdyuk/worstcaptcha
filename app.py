@@ -9,10 +9,11 @@ Security improvements:
 - Input validation
 - HTML sanitization (using nh3)
 - Secure captcha validation
+- Drawing challenge with edge detection
 """
 
 from flask import Flask, render_template, request, jsonify, session
-from flask_wtf.csrf import CSRFProtect, generate_csrf
+from flask_wtf.csrf import CSRFProtect
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 import secrets
@@ -22,6 +23,9 @@ from datetime import datetime
 from typing import Dict, List, Any, Tuple
 import os
 import nh3
+from PIL import Image, ImageFilter
+import io
+import base64
 
 app = Flask(__name__)
 
@@ -40,12 +44,6 @@ limiter = Limiter(
 )
 
 # Constants for magic numbers
-TIME_LIMIT = 12
-TARGET_SCORE = 25
-INSTRUCTION_INTERVAL = 1.8
-MIN_CLICK_INTERVAL = 0.15  # seconds
-BOT_DETECTION_THRESHOLD = 150  # milliseconds
-MAX_WRONG_CLICKS = 10
 STEP3_MIN_SCORE = 2
 OVERALL_SCORE_REQUIRED = 2
 
@@ -61,39 +59,38 @@ IMAGE_CATEGORIES: Dict[str, str] = {
     "water": "static/images/water/",
 }
 
-# Captcha instructions pool
-CAPTCHA_INSTRUCTIONS: List[str] = [
-    "Click ALL green shapes that are moving LEFT",
-    "Now click only those that are NOT squares (even if they look like squares)",
-    "Ignore everything red, EXCEPT those reds that are in the top row",
-    "Click the shapes that are currently changing color, but only if they are circular… no, wait, now only if they are NOT circular",
-    "Urgently click everything left over from the previous instruction before it disappears",
-    "If it's an even second - click triangles. If odd - pretend they don't exist",
-    "Click shapes that are touching the border of the grid",
-    "Only click shapes that have appeared in the last 0.5 seconds",
-    "Click all shapes that are NOT moving",
-    "Click shapes that are the same color as the instruction text",
-    "Ignore all shapes except those that are blinking",
-    "Click shapes that are in the same row as a circle",
-    "Click all shapes that are moving faster than average",
-    "Only click shapes that are changing size",
-    "Click shapes that are in the exact center of the grid",
-    "Ignore everything except shapes that are rotating",
-    "Click all shapes that are NOT in the top half",
-    "Click shapes that have been clicked before (if you can remember)",
-    "Only click shapes that are moving in a circle pattern",
-    "Click all shapes that are the same shape as the one in position (3,3)",
-]
+# Art images for drawing challenge
+ART_IMAGES_PATH = "static/images/art/"
 
 
-def validate_shape_id(shape_id: Any) -> bool:
-    """Validate shape_id is an integer between 0 and 35."""
-    return isinstance(shape_id, int) and 0 <= shape_id <= 35
+def detect_edges(image_data: bytes) -> bytes:
+    """
+    Detect edges in an image using Sobel edge detection.
 
+    Args:
+        image_data: Raw image bytes
 
-def validate_instruction_index(index: Any) -> bool:
-    """Validate instruction_index is an integer between 0 and 5."""
-    return isinstance(index, int) and 0 <= index <= 5
+    Returns:
+        Edge-detected image as bytes
+    """
+    img = Image.open(io.BytesIO(image_data))
+
+    # Convert to grayscale
+    img_gray = img.convert("L")
+
+    # Apply edge detection using Sobel filter
+    img_edges = img_gray.filter(ImageFilter.FIND_EDGES)
+
+    # Enhance contrast
+    img_edges = img_edges.point(lambda x: 0 if x < 50 else 255)
+
+    # Convert back to RGBA
+    img_edges = img_edges.convert("RGBA")
+
+    # Save to bytes
+    output = io.BytesIO()
+    img_edges.save(output, format="PNG")
+    return output.getvalue()
 
 
 def validate_selected_indices(indices: Any) -> bool:
@@ -147,200 +144,133 @@ def index() -> str:
     return render_template("index.html", comments=comments)
 
 
-@app.route("/api/csrf-token", methods=["GET"])
-def get_csrf_token() -> jsonify:
-    """Get CSRF token for form submissions."""
-    return jsonify({"csrf_token": generate_csrf()})
-
-
-@app.route("/api/captcha/generate", methods=["POST"])
+@app.route("/api/captcha/drawing/generate", methods=["POST"])
 @limiter.limit("10 per minute")
-def generate_captcha() -> jsonify:
+def generate_drawing_challenge() -> jsonify:
     """
-    Generate a new captcha session with seed and rules.
+    Generate a drawing challenge with an art image.
 
     Returns:
-        JSON with seed, instructions, shapes, and configuration.
+        JSON with art image path and edge-detected version.
     """
-    data = request.json or {}
-    seed = data.get("seed", generate_captcha_seed())
-
-    # Generate deterministic rules based on seed
-    import random
-
-    random.seed(seed)
-
-    # Select 6 random instructions
-    selected_instructions = random.sample(CAPTCHA_INSTRUCTIONS, 6)
-
-    # Generate shape configurations for 6x6 grid
-    shapes = []
-    for i in range(36):
-        shape_type = random.choice(["square", "circle", "triangle", "optical"])
-        color = random.choice(
-            [
-                "#FF6B6B",
-                "#4ECDC4",
-                "#45B7D1",
-                "#96CEB4",
-                "#FFEAA7",
-                "#DDA0DD",
-                "#98D8C8",
-                "#F7DC6F",
+    try:
+        # Get list of art images
+        art_images = []
+        if os.path.exists(ART_IMAGES_PATH):
+            art_images = [
+                f
+                for f in os.listdir(ART_IMAGES_PATH)
+                if f.endswith((".webp", ".jpg", ".jpeg", ".png"))
             ]
-        )
-        shapes.append(
-            {
-                "id": i,
-                "type": shape_type,
-                "color": color,
-                "x": random.uniform(-10, 10),
-                "y": random.uniform(-10, 10),
-                "speed_x": random.uniform(-1, 1),
-                "speed_y": random.uniform(-1, 1),
-                "rotation": random.uniform(0, 360),
-                "scale": random.uniform(0.8, 1.2),
-                "opacity": random.uniform(0.7, 1.0),
-            }
-        )
 
-    # Store session data
-    session["captcha_seed"] = seed
-    session["captcha_start"] = time.time()
-    session["captcha_score"] = 0
-    session["captcha_clicks"] = 0
-    session["wrong_clicks"] = 0
-    session["last_click_time"] = 0
-    session["white_text_used"] = False
-    session["overall_score"] = 0
-    session["step1_completed"] = False
-    session["step2_completed"] = False
-    session["step3_completed"] = False
+        if not art_images:
+            return jsonify({"error": "No art images available"}), 500
 
-    return jsonify(
-        {
-            "seed": seed,
-            "instructions": selected_instructions,
-            "shapes": shapes,
-            "time_limit": TIME_LIMIT,
-            "target_score": TARGET_SCORE,
-            "instruction_interval": INSTRUCTION_INTERVAL,
+        # Select random art image
+        import random
+
+        selected_image = random.choice(art_images)
+        image_path = os.path.join(ART_IMAGES_PATH, selected_image)
+
+        # Load and process image
+        with open(image_path, "rb") as f:
+            image_data = f.read()
+
+        # Detect edges
+        edge_data = detect_edges(image_data)
+        edge_base64 = base64.b64encode(edge_data).decode("utf-8")
+
+        # Store only the image filename in session (not the large edge_data)
+        session["drawing_challenge"] = {
+            "image_filename": selected_image,
+            "start_time": time.time(),
+            "attempts": 0,
         }
-    )
-
-
-@app.route("/api/captcha/verify", methods=["POST"])
-@limiter.limit("30 per minute")
-def verify_captcha_click() -> jsonify:
-    """
-    Verify a captcha click with input validation and secure validation logic.
-
-    Returns:
-        JSON with validation result and score.
-    """
-    data = request.json
-    if not data:
-        return jsonify({"valid": False, "error": "Invalid request"}), 400
-
-    shape_id = data.get("shape_id")
-    instruction_index = data.get("instruction_index")
-
-    # Input validation
-    if not validate_shape_id(shape_id):
-        return jsonify({"valid": False, "error": "Invalid shape_id"}), 400
-
-    if not validate_instruction_index(instruction_index):
-        return jsonify({"valid": False, "error": "Invalid instruction_index"}), 400
-
-    # Check if captcha session exists
-    if "captcha_seed" not in session:
-        return jsonify({"valid": False, "error": "No captcha session"}), 400
-
-    # Check time limit
-    elapsed = time.time() - session["captcha_start"]
-    if elapsed > TIME_LIMIT:
-        return jsonify({"valid": False, "error": "Time expired", "restart": True})
-
-    # Check for too-fast clicking (bot detection)
-    current_time = time.time()
-    if session["last_click_time"] > 0:
-        time_between_clicks = current_time - session["last_click_time"]
-        if time_between_clicks < MIN_CLICK_INTERVAL:
-            return jsonify(
-                {
-                    "valid": False,
-                    "error": "YOU ARE BOT!",
-                    "restart": True,
-                    "bot_detected": True,
-                }
-            )
-
-    session["last_click_time"] = current_time
-
-    # Determine if click is correct using secure validation
-    is_correct, reason = validate_captcha_click(
-        shape_id, instruction_index, session["captcha_seed"]
-    )
-
-    if is_correct:
-        session["captcha_score"] += 1
-        session["captcha_clicks"] += 1
-
-        if session["captcha_score"] >= TARGET_SCORE:
-            # Step 1 completed successfully - add to overall score
-            session["step1_completed"] = True
-            session["overall_score"] = session.get("overall_score", 0) + 1
-            return jsonify(
-                {
-                    "valid": True,
-                    "score": session["captcha_score"],
-                    "completed": True,
-                    "message": "Captcha completed!",
-                    "overall_score": session["overall_score"],
-                }
-            )
-    else:
-        session["wrong_clicks"] += 1
-        session["captcha_score"] = max(0, session["captcha_score"] - 3)
-        session["captcha_clicks"] += 1
 
         return jsonify(
             {
-                "valid": False,
-                "score": session["captcha_score"],
-                "wrong_clicks": session["wrong_clicks"],
-                "shake": True,
-                "bot_sound": True,
+                "success": True,
+                "image_path": f"/static/images/art/{selected_image}",
+                "edge_image": f"data:image/png;base64,{edge_base64}",
+                "time_limit": 30,  # 30 seconds for drawing
             }
         )
 
-    return jsonify(
-        {
-            "valid": is_correct,
-            "score": session["captcha_score"],
-            "clicks": session["captcha_clicks"],
-        }
-    )
+    except Exception as e:
+        app.logger.error(f"Error generating drawing challenge: {e}")
+        return jsonify({"error": "Failed to generate drawing challenge"}), 500
 
 
-@app.route("/api/captcha/status", methods=["GET"])
-def captcha_status() -> jsonify:
-    """Get current captcha status."""
-    if "captcha_seed" not in session:
-        return jsonify({"active": False})
+@app.route("/api/captcha/drawing/verify", methods=["POST"])
+@limiter.limit("20 per minute")
+def verify_drawing() -> jsonify:
+    """
+    Verify user's drawing against the original image edges.
 
-    elapsed = time.time() - session["captcha_start"]
+    Expects:
+        JSON with 'drawing_data' as base64 encoded image
+        JSON with 'match_percentage' calculated on frontend
 
-    return jsonify(
-        {
-            "active": True,
-            "score": session["captcha_score"],
-            "clicks": session["captcha_clicks"],
-            "wrong_clicks": session["wrong_clicks"],
-            "elapsed": elapsed,
-            "remaining": max(0, TIME_LIMIT - elapsed),
-        }
-    )
+    Returns:
+        JSON with validation result.
+    """
+    try:
+        data = request.json
+        if not data:
+            return jsonify({"valid": False, "error": "Invalid request"}), 400
+
+        drawing_data = data.get("drawing_data")
+        match_percentage = data.get("match_percentage", 0)
+
+        if not drawing_data:
+            return jsonify({"valid": False, "error": "No drawing data"}), 400
+
+        # Check if drawing challenge exists
+        if "drawing_challenge" not in session:
+            return jsonify(
+                {"valid": False, "error": "No drawing challenge session"}
+            ), 400
+
+        challenge = session["drawing_challenge"]
+
+        # Check time limit (30 seconds)
+        elapsed = time.time() - challenge["start_time"]
+        if elapsed > 30:
+            return jsonify({"valid": False, "error": "Time expired", "restart": True})
+
+        # Increment attempts
+        challenge["attempts"] += 1
+        session["drawing_challenge"] = challenge
+
+        # Require at least 60% match (calculated on frontend)
+        is_valid = match_percentage >= 60
+
+        if is_valid:
+            # Drawing challenge completed
+            session["overall_score"] = session.get("overall_score", 0) + 1
+            session["step1_completed"] = True
+            return jsonify(
+                {
+                    "valid": True,
+                    "match_percentage": round(match_percentage, 2),
+                    "completed": True,
+                    "message": "Drawing challenge completed!",
+                    "overall_score": session.get("overall_score", 0),
+                }
+            )
+        else:
+            return jsonify(
+                {
+                    "valid": False,
+                    "match_percentage": round(match_percentage, 2),
+                    "attempts": challenge["attempts"],
+                    "message": f"Drawing doesn't match enough. Match: {round(match_percentage, 2)}%",
+                }
+            )
+
+    except Exception as e:
+        app.logger.error(f"Error verifying drawing: {e}")
+        return jsonify({"valid": False, "error": "Failed to verify drawing"}), 500
 
 
 @app.route("/api/captcha/step3/generate", methods=["POST"])
@@ -545,7 +475,7 @@ def add_comment() -> jsonify:
         return jsonify({"error": "Invalid request"}), 400
 
     # Verify captcha was completed
-    if "captcha_seed" not in session or session.get("captcha_score", 0) < TARGET_SCORE:
+    if session.get("overall_score", 0) < OVERALL_SCORE_REQUIRED:
         return jsonify({"error": "Captcha not completed"}), 403
 
     # Check overall score across all steps
@@ -584,8 +514,6 @@ def add_comment() -> jsonify:
     comments.append(comment)
 
     # Clear captcha session
-    session.pop("captcha_seed", None)
-    session.pop("captcha_score", None)
     session.pop("overall_score", None)
     session.pop("step1_completed", None)
     session.pop("step2_completed", None)
@@ -597,8 +525,21 @@ def add_comment() -> jsonify:
     session.pop("step3_current_category", None)
     session.pop("step3_categories_to_find", None)
     session.pop("step3_category_index", None)
+    session.pop("drawing_challenge", None)
 
     return jsonify({"success": True, "comment": comment})
+
+
+# Exempt API endpoints from CSRF protection
+csrf.exempt(generate_drawing_challenge)
+csrf.exempt(verify_drawing)
+csrf.exempt(generate_step3)
+csrf.exempt(verify_step3)
+csrf.exempt(complete_step2)
+csrf.exempt(complete_step3)
+csrf.exempt(step3_status)
+csrf.exempt(get_comments)
+csrf.exempt(add_comment)
 
 
 if __name__ == "__main__":

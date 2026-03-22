@@ -1,48 +1,39 @@
 /**
  * Worst Captcha - The Most Annoying Captcha Ever Created
  * Features:
- * - 6×6 grid of chaotically crawling shapes
- * - Instructions that change every 1.8 seconds
- * - Score exactly 25 correct clicks in 12 seconds
- * - Wrong click: -3 points, screen shake, "BOT DETECTED" sound
- * - Cursor disappearing/inverting
- * - Shapes changing at click time
- * - Click too fast detection
- * - White text on white background once per session
+ * - Step 1: Drawing challenge with edge detection using pixelmatch
+ * - Step 2: Note Singing
+ * - Step 3: Image Selection with Age Verification
  */
+
+// Load pixelmatch library (UMD version for browser compatibility)
+const pixelmatchScript = document.createElement('script');
+pixelmatchScript.src = 'https://cdn.jsdelivr.net/npm/pixelmatch@5.3.0/index.umd.js';
+pixelmatchScript.onload = () => {
+    console.log('Pixelmatch library loaded');
+};
+document.head.appendChild(pixelmatchScript);
 
 class WorstCaptcha {
     constructor() {
-        this.gridSize = 6;
-        this.shapes = [];
-        this.instructions = [];
-        this.currentInstructionIndex = 0;
-        this.score = 0;
-        this.targetScore = 25;
-        this.timeLimit = 12;
-        this.instructionInterval = 1.8;
-        this.startTime = null;
-        this.isActive = false;
-        this.seed = null;
-        this.whiteTextUsed = false;
-        this.lastClickTime = 0;
-        this.clickCount = 0;
-        this.wrongClicks = 0;
-        
         // Audio context for bot sound
         this.audioContext = null;
         
-        // Animation frame ID
-        this.animationId = null;
-        
-        // Interval IDs for cleanup
-        this.cursorTricksInterval1 = null;
-        this.cursorTricksInterval2 = null;
-        this.shapeChangeInterval1 = null;
-        this.shapeChangeInterval2 = null;
-        
         // 3-step captcha system
         this.currentStep = 1;
+        
+        // Step 1: Drawing challenge
+        this.drawingCanvas = null;
+        this.drawingCtx = null;
+        this.isDrawing = false;
+        this.drawingData = null;
+        this.drawingStartTime = null;
+        this.drawingTimeLimit = 30;
+        this.drawingTimerInterval = null;
+        this.artImagePath = null;
+        this.edgeImage = null;
+        
+        // Step 2: Note Singing
         this.step2Notes = [];
         this.step2CurrentNoteIndex = 0;
         this.step2TargetFrequency = 0;
@@ -63,17 +54,14 @@ class WorstCaptcha {
         this.step3Is18Plus = false;
         this.step3Skipped = false;
         
-        // CSRF token
-        this.csrfToken = null;
+        // Overall score tracking
+        this.overallScore = 0;
         
         // Initialize
         this.init();
     }
     
     async init() {
-        // Fetch CSRF token first
-        await this.fetchCsrfToken();
-        
         // Initialize Quill editor
         this.quill = new Quill('#editor', {
             theme: 'snow',
@@ -103,16 +91,6 @@ class WorstCaptcha {
         this.loadComments();
     }
     
-    async fetchCsrfToken() {
-        try {
-            const response = await fetch('/api/csrf-token');
-            const data = await response.json();
-            this.csrfToken = data.csrf_token;
-        } catch (error) {
-            console.error('Failed to fetch CSRF token:', error);
-        }
-    }
-    
     async showCaptcha() {
         // Check if comment is empty
         const content = this.quill.getText().trim();
@@ -124,40 +102,17 @@ class WorstCaptcha {
         // Show captcha widget
         document.getElementById('captcha-widget').classList.remove('hidden');
         
-        // Generate captcha session
-        await this.generateCaptcha();
-        
-        // Start the game
+        // Start the game (drawing challenge)
         this.startGame();
     }
     
     hideCaptcha() {
         document.getElementById('captcha-widget').classList.add('hidden');
-        this.isActive = false;
-        if (this.animationId) {
-            cancelAnimationFrame(this.animationId);
-        }
         
-        // Clear all intervals to prevent memory leaks
-        if (this.cursorTricksInterval1) {
-            clearInterval(this.cursorTricksInterval1);
-            this.cursorTricksInterval1 = null;
-        }
-        if (this.cursorTricksInterval2) {
-            clearInterval(this.cursorTricksInterval2);
-            this.cursorTricksInterval2 = null;
-        }
-        if (this.shapeChangeInterval1) {
-            clearInterval(this.shapeChangeInterval1);
-            this.shapeChangeInterval1 = null;
-        }
-        if (this.shapeChangeInterval2) {
-            clearInterval(this.shapeChangeInterval2);
-            this.shapeChangeInterval2 = null;
-        }
-        if (this.instructionTimer) {
-            clearInterval(this.instructionTimer);
-            this.instructionTimer = null;
+        // Clear drawing timer if exists
+        if (this.drawingTimerInterval) {
+            clearInterval(this.drawingTimerInterval);
+            this.drawingTimerInterval = null;
         }
         
         // Stop microphone if active
@@ -170,11 +125,6 @@ class WorstCaptcha {
         
         // Reset checkbox and clean check field
         this.resetCheckbox();
-        
-        // Show step 1 instruction and status again
-        document.getElementById('captcha-instruction').classList.remove('hidden');
-        document.querySelector('.captcha-status').classList.remove('hidden');
-        document.querySelector('.captcha-progress').classList.remove('hidden');
     }
     
     resetCheckbox() {
@@ -188,348 +138,306 @@ class WorstCaptcha {
         captchaCheckbox.classList.remove('completed');
     }
     
-    async generateCaptcha() {
+    
+    startGame() {
+        // Start step 1: Drawing challenge
+        this.startDrawingChallenge();
+    }
+    
+    async startDrawingChallenge() {
+        // Generate drawing challenge
         try {
-            const response = await fetch('/api/captcha/generate', {
+            const response = await fetch('/api/captcha/drawing/generate', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': this.csrfToken
-                },
-                body: JSON.stringify({})
+                    'Content-Type': 'application/json'
+                }
             });
             
             const data = await response.json();
-            this.seed = data.seed;
-            this.instructions = data.instructions;
-            this.shapes = data.shapes;
-            this.currentInstructionIndex = 0;
-            this.score = 0;
-            this.wrongClicks = 0;
-            this.clickCount = 0;
-            this.whiteTextUsed = false;
             
-            // Render grid
-            this.renderGrid();
-            
-            // Update instruction
-            this.updateInstruction();
-            
+            if (data.success) {
+                this.artImagePath = data.image_path;
+                this.edgeImage = data.edge_image;
+                this.drawingTimeLimit = data.time_limit;
+                this.drawingStartTime = Date.now();
+                
+                this.showDrawingUI();
+            } else {
+                console.error('Failed to generate drawing challenge:', data.error);
+            }
         } catch (error) {
-            console.error('Failed to generate captcha:', error);
+            console.error('Error generating drawing challenge:', error);
         }
     }
     
-    renderGrid() {
+    showDrawingUI() {
         const grid = document.getElementById('captcha-grid');
-        grid.innerHTML = '';
+        grid.innerHTML = `
+            <div class="drawing-container">
+                <h3>Step 1: Drawing Challenge</h3>
+                <p>Draw the edges/contours of the art image shown below. You have ${this.drawingTimeLimit} seconds!</p>
+                <div class="drawing-workspace">
+                    <div class="reference-image">
+                        <h4>Reference Image</h4>
+                        <img src="${this.artImagePath}" alt="Reference Art" id="reference-art">
+                    </div>
+                    <div class="drawing-area">
+                        <h4>Your Drawing</h4>
+                        <canvas id="drawing-canvas" width="400" height="400"></canvas>
+                        <div class="drawing-tools">
+                            <button id="clear-canvas" class="btn btn-secondary">Clear</button>
+                            <button id="submit-drawing" class="btn btn-primary">Submit</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="drawing-progress">
+                    <span>Time: <span id="drawing-time">${this.drawingTimeLimit}s</span></span>
+                    <span>Match: <span id="drawing-match">--</span>%</span>
+                </div>
+            </div>
+        `;
         
-        for (let i = 0; i < 36; i++) {
-            const cell = document.createElement('div');
-            cell.className = 'captcha-cell';
-            cell.dataset.id = i;
+        // Initialize drawing canvas
+        this.drawingCanvas = document.getElementById('drawing-canvas');
+        this.drawingCtx = this.drawingCanvas.getContext('2d');
+        
+        // Set canvas background to white
+        this.drawingCtx.fillStyle = 'white';
+        this.drawingCtx.fillRect(0, 0, this.drawingCanvas.width, this.drawingCanvas.height);
+        
+        // Set drawing style
+        this.drawingCtx.strokeStyle = 'black';
+        this.drawingCtx.lineWidth = 2;
+        this.drawingCtx.lineCap = 'round';
+        this.drawingCtx.lineJoin = 'round';
+        
+        // Add drawing event listeners
+        this.drawingCanvas.addEventListener('mousedown', (e) => this.startDrawing(e));
+        this.drawingCanvas.addEventListener('mousemove', (e) => this.draw(e));
+        this.drawingCanvas.addEventListener('mouseup', () => this.stopDrawing());
+        this.drawingCanvas.addEventListener('mouseout', () => this.stopDrawing());
+        
+        // Touch support
+        this.drawingCanvas.addEventListener('touchstart', (e) => this.startDrawing(e));
+        this.drawingCanvas.addEventListener('touchmove', (e) => this.draw(e));
+        this.drawingCanvas.addEventListener('touchend', () => this.stopDrawing());
+        
+        // Button event listeners
+        document.getElementById('clear-canvas').addEventListener('click', () => this.clearCanvas());
+        document.getElementById('submit-drawing').addEventListener('click', () => this.submitDrawing());
+        
+        // Start drawing timer
+        this.startDrawingTimer();
+    }
+    
+    startDrawing(e) {
+        this.isDrawing = true;
+        const rect = this.drawingCanvas.getBoundingClientRect();
+        const x = (e.clientX || e.touches[0].clientX) - rect.left;
+        const y = (e.clientY || e.touches[0].clientY) - rect.top;
+        
+        this.drawingCtx.beginPath();
+        this.drawingCtx.moveTo(x, y);
+    }
+    
+    draw(e) {
+        if (!this.isDrawing) return;
+        
+        const rect = this.drawingCanvas.getBoundingClientRect();
+        const x = (e.clientX || e.touches[0].clientX) - rect.left;
+        const y = (e.clientY || e.touches[0].clientY) - rect.top;
+        
+        this.drawingCtx.lineTo(x, y);
+        this.drawingCtx.stroke();
+    }
+    
+    stopDrawing() {
+        this.isDrawing = false;
+    }
+    
+    clearCanvas() {
+        this.drawingCtx.fillStyle = 'white';
+        this.drawingCtx.fillRect(0, 0, this.drawingCanvas.width, this.drawingCanvas.height);
+    }
+    
+    startDrawingTimer() {
+        this.drawingTimerInterval = setInterval(() => {
+            const elapsed = (Date.now() - this.drawingStartTime) / 1000;
+            const remaining = Math.max(0, this.drawingTimeLimit - elapsed);
             
-            const shape = this.shapes[i];
-            const shapeEl = document.createElement('div');
-            shapeEl.className = `shape ${shape.type}`;
-            shapeEl.style.backgroundColor = shape.color;
-            
-            if (shape.type === 'triangle') {
-                shapeEl.style.borderBottomColor = shape.color;
+            const timeEl = document.getElementById('drawing-time');
+            if (timeEl) {
+                timeEl.textContent = `${remaining.toFixed(1)}s`;
+                
+                // Change color when time is running low
+                if (remaining < 10) {
+                    timeEl.style.color = '#ff4444';
+                } else if (remaining < 20) {
+                    timeEl.style.color = '#ff9800';
+                } else {
+                    timeEl.style.color = '#4CAF50';
+                }
             }
             
-            // Apply initial position
-            shapeEl.style.transform = `translate(-50%, -50%) translate(${shape.x}px, ${shape.y}px) rotate(${shape.rotation}deg) scale(${shape.scale})`;
-            shapeEl.style.opacity = shape.opacity;
-            
-            cell.appendChild(shapeEl);
-            
-            cell.addEventListener('click', (e) => this.handleCellClick(i, e));
-            
-            grid.appendChild(cell);
-        }
-    }
-    
-    startGame() {
-        this.isActive = true;
-        this.startTime = Date.now();
-        this.lastInstructionChange = Date.now();
-        
-        // Start animation loop
-        this.animate();
-        
-        // Start timer
-        this.updateTimer();
-        
-        // Start instruction change interval
-        this.instructionTimer = setInterval(() => {
-            this.changeInstruction();
-        }, this.instructionInterval * 1000);
-        
-        // Start cursor tricks
-        this.startCursorTricks();
-        
-        // Start shape change tricks
-        this.startShapeChangeTricks();
-    }
-    
-    animate() {
-        if (!this.isActive) return;
-        
-        // Move shapes
-        this.shapes.forEach((shape, index) => {
-            shape.x += shape.speed_x;
-            shape.y += shape.speed_y;
-            
-            // Bounce off walls (limit movement to stay within cell)
-            if (shape.x < -20 || shape.x > 20) shape.speed_x *= -1;
-            if (shape.y < -20 || shape.y > 20) shape.speed_y *= -1;
-            
-            // Update position
-            const cell = document.querySelector(`[data-id="${index}"]`);
-            if (cell) {
-                const shapeEl = cell.querySelector('.shape');
-                shapeEl.style.transform = `translate(-50%, -50%) translate(${shape.x}px, ${shape.y}px) rotate(${shape.rotation}deg) scale(${shape.scale})`;
-                shapeEl.style.opacity = shape.opacity;
+            if (remaining <= 0) {
+                this.submitDrawing();
             }
-        });
-        
-        this.animationId = requestAnimationFrame(() => this.animate());
+        }, 100);
     }
     
-    updateTimer() {
-        if (!this.isActive) return;
-        
-        const elapsed = (Date.now() - this.startTime) / 1000;
-        const remaining = Math.max(0, this.timeLimit - elapsed);
-        
-        document.getElementById('captcha-time').textContent = `Time: ${remaining.toFixed(1)}s`;
-        document.getElementById('captcha-score').textContent = `Score: ${this.score}/${this.targetScore}`;
-        
-        // Update progress bar
-        const progress = (this.score / this.targetScore) * 100;
-        document.getElementById('progress-bar').style.width = `${progress}%`;
-        
-        if (remaining <= 0) {
-            this.gameOver(false);
-            return;
+    async submitDrawing() {
+        // Stop timer
+        if (this.drawingTimerInterval) {
+            clearInterval(this.drawingTimerInterval);
+            this.drawingTimerInterval = null;
         }
         
-        requestAnimationFrame(() => this.updateTimer());
-    }
-    
-    changeInstruction() {
-        if (!this.isActive) return;
+        // Get canvas data
+        const drawingData = this.drawingCanvas.toDataURL('image/png');
         
-        this.currentInstructionIndex = (this.currentInstructionIndex + 1) % this.instructions.length;
-        this.updateInstruction();
+        // Calculate match percentage using pixelmatch
+        const matchPercentage = await this.calculateMatchPercentage(drawingData);
         
-        // White text on white background trick (once per session)
-        if (!this.whiteTextUsed && Math.random() < 0.2) {
-            this.whiteTextUsed = true;
-            const instructionEl = document.getElementById('captcha-instruction');
-            instructionEl.classList.add('white-text');
-            setTimeout(() => {
-                instructionEl.classList.remove('white-text');
-            }, 2000);
-        }
-    }
-    
-    updateInstruction() {
-        const instructionEl = document.getElementById('captcha-instruction');
-        instructionEl.textContent = this.instructions[this.currentInstructionIndex];
-    }
-    
-    async handleCellClick(cellId, event) {
-        if (!this.isActive) return;
-        
-        // Check for too-fast clicking
-        const now = Date.now();
-        const timeBetweenClicks = now - this.lastClickTime;
-        
-        if (this.lastClickTime > 0 && timeBetweenClicks < 150) {
-            this.triggerBotDetection();
-            return;
+        // Update match display
+        const matchEl = document.getElementById('drawing-match');
+        if (matchEl) {
+            matchEl.textContent = matchPercentage.toFixed(2);
         }
         
-        this.lastClickTime = now;
-        this.clickCount++;
-        
-        // Visual feedback
-        const cell = event.currentTarget;
-        cell.classList.add('clicked');
-        setTimeout(() => cell.classList.remove('clicked'), 300);
-        
-        // Send click to server for verification
         try {
-            const response = await fetch('/api/captcha/verify', {
+            const response = await fetch('/api/captcha/drawing/verify', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': this.csrfToken
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    shape_id: cellId,
-                    instruction_index: this.currentInstructionIndex,
-                    click_time: now
+                    drawing_data: drawingData,
+                    match_percentage: matchPercentage
                 })
             });
             
             const data = await response.json();
             
-            if (data.restart) {
-                this.triggerBotDetection();
-                return;
-            }
-            
             if (data.valid) {
-                this.score = data.score;
-            } else {
-                this.score = data.score;
-                this.wrongClicks = data.wrong_clicks;
-                
-                // Trigger screen shake and sound
-                this.triggerScreenShake();
-                this.playBotSound();
-            }
-            
-            // Check if completed
-            if (data.completed) {
+                // Drawing challenge completed - move to step 2
+                this.currentStep = 2;
                 this.gameOver(true);
+            } else {
+                // Check if time expired
+                if (data.restart) {
+                    this.triggerBotDetection();
+                    return;
+                }
+                
+                // Allow retry if attempts < 3
+                if (data.attempts < 3) {
+                    alert(`Drawing doesn't match enough. Match: ${matchPercentage.toFixed(2)}%. Try again!`);
+                    this.clearCanvas();
+                    this.drawingStartTime = Date.now();
+                    this.startDrawingTimer();
+                } else {
+                    // Too many attempts - trigger bot detection
+                    this.triggerBotDetection();
+                }
             }
-            
         } catch (error) {
-            console.error('Failed to verify click:', error);
+            console.error('Error submitting drawing:', error);
         }
     }
     
-    triggerScreenShake() {
-        const overlay = document.getElementById('shake-overlay');
-        overlay.classList.remove('hidden');
-        overlay.classList.add('active');
+    async calculateMatchPercentage(drawingData) {
+        // Wait for pixelmatch to load
+        if (typeof pixelmatch === 'undefined') {
+            console.warn('Pixelmatch not loaded yet, using fallback comparison');
+            return 50; // Fallback value
+        }
         
-        setTimeout(() => {
-            overlay.classList.remove('active');
-            overlay.classList.add('hidden');
-        }, 500);
+        try {
+            // Load edge image
+            const edgeImg = new Image();
+            edgeImg.src = this.edgeImage;
+            
+            await new Promise((resolve, reject) => {
+                edgeImg.onload = resolve;
+                edgeImg.onerror = reject;
+            });
+            
+            // Load user drawing
+            const userImg = new Image();
+            userImg.src = drawingData;
+            
+            await new Promise((resolve, reject) => {
+                userImg.onload = resolve;
+                userImg.onerror = reject;
+            });
+            
+            // Create canvases for comparison
+            const edgeCanvas = document.createElement('canvas');
+            edgeCanvas.width = edgeImg.width;
+            edgeCanvas.height = edgeImg.height;
+            const edgeCtx = edgeCanvas.getContext('2d');
+            edgeCtx.drawImage(edgeImg, 0, 0);
+            
+            const userCanvas = document.createElement('canvas');
+            userCanvas.width = edgeImg.width;
+            userCanvas.height = edgeImg.height;
+            const userCtx = userCanvas.getContext('2d');
+            userCtx.drawImage(userImg, 0, 0, edgeImg.width, edgeImg.height);
+            
+            // Get image data
+            const edgeData = edgeCtx.getImageData(0, 0, edgeImg.width, edgeImg.height);
+            const userData = userCtx.getImageData(0, 0, edgeImg.width, edgeImg.height);
+            
+            // Create diff image
+            const diffData = new Uint8Array(edgeData.data.length);
+            
+            // Compare images using pixelmatch
+            const diffPixelCount = pixelmatch(
+                edgeData.data,
+                userData.data,
+                diffData,
+                edgeImg.width,
+                edgeImg.height,
+                { threshold: 0.1 }
+            );
+            
+            // Calculate match percentage
+            const totalPixels = edgeImg.width * edgeImg.height;
+            const matchPercentage = Math.max(0, 100 - (diffPixelCount / totalPixels * 100));
+            
+            return matchPercentage;
+        } catch (error) {
+            console.error('Error calculating match percentage:', error);
+            return 50; // Fallback value
+        }
     }
     
     triggerBotDetection() {
-        this.isActive = false;
-        clearInterval(this.instructionTimer);
-        
-        const overlay = document.getElementById('bot-overlay');
-        overlay.classList.remove('hidden');
-        
-        this.playBotSound();
-        
-        setTimeout(() => {
-            overlay.classList.add('hidden');
-            this.hideCaptcha();
-        }, 2000);
+        // Simple bot detection - just reset the captcha
+        alert('🤖 Bot detected! Please try again.');
+        this.resetCheckbox();
+        this.hideCaptcha();
     }
     
-    playBotSound() {
-        if (!this.audioContext) {
-            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        }
-        
-        const oscillator = this.audioContext.createOscillator();
-        const gainNode = this.audioContext.createGain();
-        
-        oscillator.connect(gainNode);
-        gainNode.connect(this.audioContext.destination);
-        
-        oscillator.frequency.value = 800;
-        oscillator.type = 'square';
-        
-        gainNode.gain.setValueAtTime(0.3, this.audioContext.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.5);
-        
-        oscillator.start(this.audioContext.currentTime);
-        oscillator.stop(this.audioContext.currentTime + 0.5);
-    }
-    
-    startCursorTricks() {
-        // Hide cursor randomly
-        this.cursorTricksInterval1 = setInterval(() => {
-            if (!this.isActive) return;
-            
-            if (Math.random() < 0.1) {
-                document.body.classList.add('cursor-hidden');
-                setTimeout(() => {
-                    document.body.classList.remove('cursor-hidden');
-                }, 700);
-            }
-        }, 3000);
-        
-        // Invert cursor direction
-        this.cursorTricksInterval2 = setInterval(() => {
-            if (!this.isActive) return;
-            
-            if (Math.random() < 0.05) {
-                document.body.classList.add('cursor-inverted');
-                setTimeout(() => {
-                    document.body.classList.remove('cursor-inverted');
-                }, 1000);
-            }
-        }, 5000);
-    }
-    
-    startShapeChangeTricks() {
-        this.shapeChangeInterval1 = setInterval(() => {
-            if (!this.isActive) return;
-            
-            // Randomly change shape colors
-            const randomIndex = Math.floor(Math.random() * 36);
-            const shape = this.shapes[randomIndex];
-            const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F'];
-            shape.color = colors[Math.floor(Math.random() * colors.length)];
-            
-            const cell = document.querySelector(`[data-id="${randomIndex}"]`);
-            if (cell) {
-                const shapeEl = cell.querySelector('.shape');
-                shapeEl.style.backgroundColor = shape.color;
-                if (shape.type === 'triangle') {
-                    shapeEl.style.borderBottomColor = shape.color;
-                }
-            }
-        }, 500);
-        
-        // Randomly change shape types
-        this.shapeChangeInterval2 = setInterval(() => {
-            if (!this.isActive) return;
-            
-            if (Math.random() < 0.1) {
-                const randomIndex = Math.floor(Math.random() * 36);
-                const shape = this.shapes[randomIndex];
-                const types = ['square', 'circle', 'triangle', 'optical'];
-                shape.type = types[Math.floor(Math.random() * types.length)];
-                
-                const cell = document.querySelector(`[data-id="${randomIndex}"]`);
-                if (cell) {
-                    const shapeEl = cell.querySelector('.shape');
-                    shapeEl.className = `shape ${shape.type}`;
-                    shapeEl.style.backgroundColor = shape.color;
-                    if (shape.type === 'triangle') {
-                        shapeEl.style.borderBottomColor = shape.color;
-                    }
-                }
-            }
-        }, 1000);
-    }
     
     gameOver(completed) {
-        this.isActive = false;
-        clearInterval(this.instructionTimer);
+        // Clear drawing timer if exists
+        if (this.drawingTimerInterval) {
+            clearInterval(this.drawingTimerInterval);
+            this.drawingTimerInterval = null;
+        }
         
         if (completed) {
+            // Increment overall score for completed step
+            this.overallScore++;
+            
             if (this.currentStep === 1) {
-                // Step 1 completed - move to step 2
+                // Step 1 (Drawing) completed - move to step 2
                 this.currentStep = 2;
                 this.startStep2();
             } else if (this.currentStep === 2) {
-                // Step 2 completed - move to step 3 (to be implemented)
+                // Step 2 completed - move to step 3
                 this.currentStep = 3;
                 this.startStep3();
             } else if (this.currentStep === 3) {
@@ -563,7 +471,7 @@ class WorstCaptcha {
         }
     }
     
-    // Step 2: Note Singing
+    // Step 2: Note Singing (now step 2 after drawing challenge)
     async startStep2() {
         // Generate 3 random notes (frequencies in Hz)
         const noteFrequencies = [261.63, 329.63, 392.00]; // C4, E4, G4
@@ -592,11 +500,6 @@ class WorstCaptcha {
     }
     
     showStep2UI() {
-        // Hide step 1 instruction and status
-        document.getElementById('captcha-instruction').classList.add('hidden');
-        document.querySelector('.captcha-status').classList.add('hidden');
-        document.querySelector('.captcha-progress').classList.add('hidden');
-        
         const grid = document.getElementById('captcha-grid');
         grid.innerHTML = `
             <div class="step2-container">
@@ -831,8 +734,7 @@ class WorstCaptcha {
                 await fetch('/api/captcha/step2/complete', {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': this.csrfToken
+                        'Content-Type': 'application/json'
                     }
                 });
             } catch (error) {
@@ -861,11 +763,6 @@ class WorstCaptcha {
     }
     
     showAgeVerification() {
-        // Hide step 1 instruction and status
-        document.getElementById('captcha-instruction').classList.add('hidden');
-        document.querySelector('.captcha-status').classList.add('hidden');
-        document.querySelector('.captcha-progress').classList.add('hidden');
-        
         const grid = document.getElementById('captcha-grid');
         grid.innerHTML = `
             <div class="step3-container">
@@ -892,8 +789,7 @@ class WorstCaptcha {
             const response = await fetch('/api/captcha/step3/generate', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': this.csrfToken
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({ is_18_plus: is18Plus })
             });
@@ -982,8 +878,7 @@ class WorstCaptcha {
             const response = await fetch('/api/captcha/step3/verify', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': this.csrfToken
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
                     selected_indices: this.step3SelectedIndices
@@ -1047,8 +942,7 @@ class WorstCaptcha {
             await fetch('/api/captcha/step3/complete', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': this.csrfToken
+                    'Content-Type': 'application/json'
                 }
             });
         } catch (error) {
@@ -1082,8 +976,7 @@ class WorstCaptcha {
             const response = await fetch('/api/comments', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': this.csrfToken
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
                     author: author,
