@@ -10,7 +10,7 @@
 const pixelmatchScript = document.createElement('script');
 pixelmatchScript.src = 'https://cdn.jsdelivr.net/npm/pixelmatch@7.1.0/index.min.js';
 pixelmatchScript.onload = () => {
-    console.log('Pixelmatch library loaded');
+    // Pixelmatch library loaded
 };
 document.head.appendChild(pixelmatchScript);
 
@@ -208,10 +208,9 @@ class WorstCaptcha {
                 
                 this.showDrawingUI();
             } else {
-                console.error('Failed to generate drawing challenge:', data.error);
+                // Failed to generate drawing challenge
             }
         } catch (error) {
-            console.error('Error generating drawing challenge:', error);
             alert('Failed to load drawing challenge. Please refresh the page.');
         }
     }
@@ -386,7 +385,6 @@ class WorstCaptcha {
                 }, 3000);
             }
         } catch (error) {
-            console.error('Error submitting drawing:', error);
             this.drawingSubmitting = false;  // Reset lock on error
             alert('Failed to submit drawing. Please try again.');
         }
@@ -395,7 +393,6 @@ class WorstCaptcha {
     async calculateMatchPercentage(drawingData) {
         // Wait for pixelmatch to load
         if (typeof pixelmatch === 'undefined') {
-            console.warn('Pixelmatch not loaded yet, using fallback comparison');
             // Use a simple fallback that calculates based on edge pixel count
             return this.fallbackComparison(drawingData);
         }
@@ -470,11 +467,8 @@ class WorstCaptcha {
             // Final score with bonus, capped at 100
             const finalScore = Math.min(100, matchPercentage + coverageBonus);
             
-            console.log(`Match calculation: diffPixels=${diffPixelCount}, total=${totalPixels}, match=${matchPercentage.toFixed(2)}%, coverage=${coverageRatio.toFixed(2)}, bonus=${coverageBonus.toFixed(2)}%, final=${finalScore.toFixed(2)}%`);
-            
             return finalScore;
         } catch (error) {
-            console.error('Error calculating match percentage:', error);
             return this.fallbackComparison(drawingData);
         }
     }
@@ -550,11 +544,8 @@ class WorstCaptcha {
             
             const finalScore = Math.min(100, overlapPercentage + userBonus);
             
-            console.log(`Fallback comparison: edgePixels=${edgePixels}, userEdgePixels=${userEdgePixels}, overlap=${overlapCount}, overlap%=${overlapPercentage.toFixed(2)}%, bonus=${userBonus.toFixed(2)}%, final=${finalScore.toFixed(2)}%`);
-            
             return finalScore;
         } catch (error) {
-            console.error('Error in fallback comparison:', error);
             // Fail the challenge on error instead of random percentage
             return 0;
         }
@@ -786,7 +777,6 @@ class WorstCaptcha {
             this.updateStep2Timer();
             
         } catch (err) {
-            console.error('Microphone access denied:', err);
             const micStatus = document.getElementById('mic-status');
             micStatus.innerHTML = '❌ Microphone access denied<br><small>Please allow microphone access in your browser settings and reload the page</small>';
             micStatus.style.color = '#ff4444';
@@ -923,7 +913,7 @@ class WorstCaptcha {
                 
                 clearTimeout(timeoutId);
             } catch (error) {
-                console.error('Failed to mark step 2 as complete:', error);
+                // Failed to mark step 2 as complete
             }
             
             this.gameOver(true);
@@ -1000,7 +990,6 @@ class WorstCaptcha {
                 this.showImageGrid();
             }
         } catch (error) {
-            console.error('Failed to generate step 3:', error);
             alert('Failed to load image selection. Please refresh the page.');
         }
     }
@@ -1114,7 +1103,6 @@ class WorstCaptcha {
                 this.step3Submitting = false;
             }
         } catch (error) {
-            console.error('Failed to verify selection:', error);
             this.step3Submitting = false;
             alert('Failed to verify selection. Please try again.');
         }
@@ -1199,7 +1187,6 @@ class WorstCaptcha {
                 this.showBotDetection();
             }
         } catch (error) {
-            console.error('Failed to mark step 3 as complete:', error);
             alert('Failed to complete captcha. Please try again.');
             this.showBotDetection();
         }
@@ -1274,7 +1261,6 @@ class WorstCaptcha {
             }
             
         } catch (error) {
-            console.error('Failed to submit comment:', error);
             alert('Failed to submit comment. Please try again.');
         }
     }
@@ -1319,7 +1305,6 @@ class WorstCaptcha {
             });
             
         } catch (error) {
-            console.error('Failed to load comments:', error);
             alert('Failed to load comments. Please refresh the page.');
         }
     }
