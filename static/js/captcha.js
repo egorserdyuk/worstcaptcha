@@ -1010,7 +1010,7 @@ class WorstCaptcha {
             const image = this.step3Images[i];
             gridHTML += `
                 <div class="image-cell" data-index="${i}">
-                    <img src="${image.path}" alt="${image.category}" loading="lazy">
+                    <img src="${image.path}" loading="lazy">
                     <div class="selection-overlay"></div>
                 </div>
             `;
