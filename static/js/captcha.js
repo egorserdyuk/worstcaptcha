@@ -8,7 +8,7 @@
 
 // Load pixelmatch library (UMD version for browser compatibility)
 const pixelmatchScript = document.createElement('script');
-pixelmatchScript.src = 'https://cdn.jsdelivr.net/npm/pixelmatch@5.3.0/index.umd.js';
+pixelmatchScript.src = 'https://cdn.jsdelivr.net/npm/pixelmatch@7.1.0/index.min.js';
 pixelmatchScript.onload = () => {
     console.log('Pixelmatch library loaded');
 };
@@ -50,7 +50,6 @@ class WorstCaptcha {
         this.step3Images = [];
         this.step3CurrentCategory = '';
         this.step3SelectedIndices = [];
-        this.step3Score = 0;
         this.step3TotalCategories = 1;  // Only one category
         this.step3Is18Plus = false;
         this.step3Skipped = false;
@@ -110,6 +109,9 @@ class WorstCaptcha {
     
     hideCaptcha() {
         document.getElementById('captcha-widget').classList.add('hidden');
+        
+        // Reset drawing submission lock
+        this.drawingSubmitting = false;
         
         // Clear drawing timer if exists
         if (this.drawingTimerInterval) {
@@ -329,28 +331,15 @@ class WorstCaptcha {
             const data = await response.json();
             
             if (data.valid) {
-                // Drawing challenge completed - move to step 2
-                this.currentStep = 2;
-                this.gameOver(true);
+                // Drawing challenge completed - show similarity score and wait 3 seconds before moving to step 2
+                setTimeout(() => {
+                    this.gameOver(true);
+                }, 3000);
             } else {
-                // Check if time expired
-                if (data.restart) {
-                    // Time expired - just proceed to next step without bot detection
-                    this.gameOver(false);
-                    return;
-                }
-                
-                // Allow retry if attempts < 3
-                if (data.attempts < 3) {
-                    alert(`Drawing doesn't match enough. Match: ${matchPercentage.toFixed(2)}%. Try again!`);
-                    this.clearCanvas();
-                    this.drawingStartTime = Date.now();
-                    this.startDrawingTimer();
-                    this.drawingSubmitting = false;  // Reset lock for retry
-                } else {
-                    // Too many attempts - just proceed to next step without bot detection
-                    this.gameOver(false);
-                }
+                // Drawing doesn't match enough - proceed to step 2 anyway
+                setTimeout(() => {
+                    this.gameOver(true);
+                }, 3000);
             }
         } catch (error) {
             console.error('Error submitting drawing:', error);
@@ -586,21 +575,10 @@ class WorstCaptcha {
                 this.submitComment();
             }
         } else {
-            // Time expired - proceed to next step without interruption
-            if (this.currentStep === 1) {
-                // Failed step 1 - proceed to step 2 anyway
-                this.currentStep = 2;
-                this.startStep2();
-            } else if (this.currentStep === 2) {
-                // Failed step 2 - proceed to step 3 anyway
-                this.currentStep = 3;
-                this.startStep3();
-            } else {
-                // Failed step 3 - reset
-                alert('⏰ Time expired! Please try again.');
-                this.resetCheckbox();
-                this.hideCaptcha();
-            }
+            // Failed step - reset captcha
+            alert('❌ Challenge failed! Please try again.');
+            this.resetCheckbox();
+            this.hideCaptcha();
         }
     }
     
@@ -682,13 +660,13 @@ class WorstCaptcha {
         }
         
         if (remaining <= 0) {
-            // Time expired - move to step 3
+            // Time expired - reset captcha
             this.step2IsListening = false;
             if (this.step2MicrophoneStream) {
                 this.step2MicrophoneStream.getTracks().forEach(track => track.stop());
             }
-            this.currentStep = 3;
-            this.startStep3();
+            this.resetCheckbox();
+            this.hideCaptcha();
             return;
         }
         
@@ -938,7 +916,6 @@ class WorstCaptcha {
                 this.step3Images = data.images;
                 this.step3CurrentCategory = data.current_category;
                 this.step3TotalCategories = data.total_categories;
-                this.step3Score = 0;
                 this.step3SelectedIndices = [];
                 this.showImageGrid();
             }
@@ -974,7 +951,6 @@ class WorstCaptcha {
                 <div class="step3-controls">
                     <div class="step3-progress">
                         <span>Challenge: 1/1</span>
-                        <span>Score: <span id="step3-score">0</span></span>
                     </div>
                     <button id="step3-submit-btn" class="btn btn-primary">VERIFY</button>
                 </div>
@@ -1029,9 +1005,6 @@ class WorstCaptcha {
             
             if (data.valid) {
                 // Correct selection
-                this.step3Score = data.score;
-                document.getElementById('step3-score').textContent = this.step3Score;
-                
                 if (data.completed) {
                     // Single category completed - backend will handle overall score
                     this.completeCaptcha();
@@ -1080,7 +1053,9 @@ class WorstCaptcha {
         this.currentStep = 1;
         this.step3Submitting = false;
         this.step3SelectedIndices = [];
-        this.step3Score = 0;
+        
+        // Reset drawing submission lock
+        this.drawingSubmitting = false;
         
         // Clear drawing timer if exists
         if (this.drawingTimerInterval) {

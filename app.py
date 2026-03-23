@@ -22,12 +22,18 @@ import time
 from datetime import datetime
 from typing import Dict, List, Any, Tuple
 import os
+import logging
 import nh3
 from PIL import Image, ImageFilter
 import io
 import base64
 
 app = Flask(__name__)
+
+# Configure logging to show INFO level logs
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 
 # Security configurations
 app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
@@ -434,6 +440,15 @@ def verify_step3() -> jsonify:
     if not current_category or not images:
         return jsonify({"valid": False, "error": "No step 3 session"}), 400
 
+    # Log the answer for step 3
+    # Convert indices to 1-indexed [row, col] coordinates for 4x4 grid
+    answer_coords = []
+    for idx in selected_indices:
+        row = idx // 4 + 1  # 1-indexed row
+        col = idx % 4 + 1  # 1-indexed column
+        answer_coords.append(f"[{row}, {col}]")
+    app.logger.info(f"subject: {current_category}; answer {', '.join(answer_coords)}")
+
     # Find all indices that belong to the current category
     correct_indices = [
         i for i, img in enumerate(images) if img["category"] == current_category
@@ -445,8 +460,10 @@ def verify_step3() -> jsonify:
 
     is_correct = selected_set == correct_set
 
-    if is_correct:
-        session["step3_score"] = session.get("step3_score", 0) + 1
+    # Add to overall score if correct (once per step 3)
+    if is_correct and not session.get("step3_score_added", False):
+        session["overall_score"] = session.get("overall_score", 0) + 1
+        session["step3_score_added"] = True
 
     session["step3_attempts"] = session.get("step3_attempts", 0) + 1
 
@@ -464,7 +481,6 @@ def verify_step3() -> jsonify:
                 "correct_indices": correct_indices,
                 "next_category": categories[category_index],
                 "completed": False,
-                "score": session["step3_score"],
             }
         )
     else:
@@ -474,7 +490,6 @@ def verify_step3() -> jsonify:
                 "valid": is_correct,
                 "correct_indices": correct_indices,
                 "completed": True,
-                "score": session["step3_score"],
                 "total_categories": len(categories),
             }
         )
@@ -494,8 +509,8 @@ def complete_step2() -> jsonify:
 def complete_step3() -> jsonify:
     """Mark step 3 as completed."""
     session["step3_completed"] = True
-    # Only add to overall score if step 3 score >= minimum
-    if session.get("step3_score", 0) >= STEP3_MIN_SCORE:
+    # Add to overall score if step 3 was skipped (under 18)
+    if session.get("step3_skipped", False):
         session["overall_score"] = session.get("overall_score", 0) + 1
     return jsonify({"success": True, "overall_score": session.get("overall_score", 0)})
 
@@ -506,7 +521,6 @@ def step3_status() -> jsonify:
     return jsonify(
         {
             "skipped": session.get("step3_skipped", False),
-            "score": session.get("step3_score", 0),
             "attempts": session.get("step3_attempts", 0),
             "overall_score": session.get("overall_score", 0),
         }
@@ -577,7 +591,7 @@ def add_comment() -> jsonify:
     session.pop("step2_completed", None)
     session.pop("step3_completed", None)
     session.pop("step3_skipped", None)
-    session.pop("step3_score", None)
+    session.pop("step3_score_added", None)
     session.pop("step3_attempts", None)
     session.pop("step3_images", None)
     session.pop("step3_current_category", None)
