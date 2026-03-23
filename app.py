@@ -699,7 +699,10 @@ def verify_step3() -> jsonify:
 def complete_step2() -> jsonify:
     """Mark step 2 as completed."""
     session["step2_completed"] = True
-    session["overall_score"] = session.get("overall_score", 0) + 1
+    # Add to overall score only once per step 2 (prevent duplicate scoring)
+    if not session.get("step2_score_added", False):
+        session["step2_score_added"] = True  # Set flag before incrementing
+        session["overall_score"] = session.get("overall_score", 0) + 1
     return jsonify({"success": True, "overall_score": session.get("overall_score", 0)})
 
 
@@ -818,6 +821,7 @@ def add_comment() -> jsonify:
     session.pop("overall_score", None)
     session.pop("step1_completed", None)
     session.pop("step2_completed", None)
+    session.pop("step2_score_added", None)
     session.pop("step3_completed", None)
     session.pop("step3_skipped", None)
     session.pop("step3_score_added", None)
