@@ -350,7 +350,8 @@ class WorstCaptcha {
         // Wait for pixelmatch to load
         if (typeof pixelmatch === 'undefined') {
             console.warn('Pixelmatch not loaded yet, using fallback comparison');
-            return 50; // Fallback value
+            // Use a simple fallback that calculates based on edge pixel count
+            return this.fallbackComparison(drawingData);
         }
         
         try {
@@ -392,25 +393,145 @@ class WorstCaptcha {
             // Create diff image
             const diffData = new Uint8Array(edgeData.data.length);
             
-            // Compare images using pixelmatch
+            // Compare images using pixelmatch with more lenient threshold
             const diffPixelCount = pixelmatch(
                 edgeData.data,
                 userData.data,
                 diffData,
                 edgeImg.width,
                 edgeImg.height,
-                { threshold: 0.1 }
+                {
+                    threshold: 0.15,  // Increased threshold for more lenient matching
+                    includeAA: false  // Don't count anti-aliasing differences
+                }
             );
             
             // Calculate match percentage
             const totalPixels = edgeImg.width * edgeImg.height;
             const matchPercentage = Math.max(0, 100 - (diffPixelCount / totalPixels * 100));
             
-            return matchPercentage;
+            // Apply a bonus for having some edge coverage
+            // This helps users who draw the main edges even if not perfect
+            const edgePixels = this.countEdgePixels(edgeData);
+            const userEdgePixels = this.countEdgePixels(userData);
+            
+            // Calculate coverage ratio (how much of the edges the user drew)
+            const coverageRatio = userEdgePixels > 0 ? Math.min(1, edgePixels / userEdgePixels) : 0;
+            
+            // Bonus for good coverage (up to 10% bonus)
+            const coverageBonus = coverageRatio * 10;
+            
+            // Final score with bonus, capped at 100
+            const finalScore = Math.min(100, matchPercentage + coverageBonus);
+            
+            console.log(`Match calculation: diffPixels=${diffPixelCount}, total=${totalPixels}, match=${matchPercentage.toFixed(2)}%, coverage=${coverageRatio.toFixed(2)}, bonus=${coverageBonus.toFixed(2)}%, final=${finalScore.toFixed(2)}%`);
+            
+            return finalScore;
         } catch (error) {
             console.error('Error calculating match percentage:', error);
-            return 50; // Fallback value
+            return this.fallbackComparison(drawingData);
         }
+    }
+    
+    async fallbackComparison(drawingData) {
+        // Fallback comparison when pixelmatch is not available
+        // This calculates a simple percentage based on edge pixel overlap
+        try {
+            const edgeImg = new Image();
+            edgeImg.src = this.edgeImage;
+            
+            await new Promise((resolve, reject) => {
+                edgeImg.onload = resolve;
+                edgeImg.onerror = reject;
+            });
+            
+            const userImg = new Image();
+            userImg.src = drawingData;
+            
+            await new Promise((resolve, reject) => {
+                userImg.onload = resolve;
+                userImg.onerror = reject;
+            });
+            
+            const edgeCanvas = document.createElement('canvas');
+            edgeCanvas.width = edgeImg.width;
+            edgeCanvas.height = edgeImg.height;
+            const edgeCtx = edgeCanvas.getContext('2d');
+            edgeCtx.drawImage(edgeImg, 0, 0);
+            
+            const userCanvas = document.createElement('canvas');
+            userCanvas.width = edgeImg.width;
+            userCanvas.height = edgeImg.height;
+            const userCtx = userCanvas.getContext('2d');
+            userCtx.drawImage(userImg, 0, 0, edgeImg.width, edgeImg.height);
+            
+            const edgeData = edgeCtx.getImageData(0, 0, edgeImg.width, edgeImg.height);
+            const userData = userCtx.getImageData(0, 0, edgeImg.width, edgeImg.height);
+            
+            // Count edge pixels in both images
+            const edgePixels = this.countEdgePixels(edgeData);
+            const userEdgePixels = this.countEdgePixels(userData);
+            
+            // Calculate overlap
+            let overlapCount = 0;
+            const data1 = edgeData.data;
+            const data2 = userData.data;
+            
+            for (let i = 0; i < data1.length; i += 4) {
+                const r1 = data1[i];
+                const g1 = data1[i + 1];
+                const b1 = data1[i + 2];
+                
+                const r2 = data2[i];
+                const g2 = data2[i + 1];
+                const b2 = data2[i + 2];
+                
+                // Check if both pixels are dark (edge pixels)
+                const isEdge1 = r1 < 128 && g1 < 128 && b1 < 128;
+                const isEdge2 = r2 < 128 && g2 < 128 && b2 < 128;
+                
+                if (isEdge1 && isEdge2) {
+                    overlapCount++;
+                }
+            }
+            
+            // Calculate percentage based on overlap
+            const totalEdgePixels = Math.max(edgePixels, 1);
+            const overlapPercentage = (overlapCount / totalEdgePixels) * 100;
+            
+            // Add bonus for user drawing edges
+            const userBonus = Math.min(20, (userEdgePixels / edgePixels) * 10);
+            
+            const finalScore = Math.min(100, overlapPercentage + userBonus);
+            
+            console.log(`Fallback comparison: edgePixels=${edgePixels}, userEdgePixels=${userEdgePixels}, overlap=${overlapCount}, overlap%=${overlapPercentage.toFixed(2)}%, bonus=${userBonus.toFixed(2)}%, final=${finalScore.toFixed(2)}%`);
+            
+            return finalScore;
+        } catch (error) {
+            console.error('Error in fallback comparison:', error);
+            // Last resort: return a random percentage based on user's drawing
+            return Math.random() * 30 + 30; // Random between 30-60%
+        }
+    }
+    
+    countEdgePixels(imageData) {
+        // Count non-white pixels (edges are typically dark)
+        let edgeCount = 0;
+        const data = imageData.data;
+        
+        for (let i = 0; i < data.length; i += 4) {
+            const r = data[i];
+            const g = data[i + 1];
+            const b = data[i + 2];
+            
+            // Check if pixel is dark (edge pixel)
+            // Edges are typically black or very dark
+            if (r < 128 && g < 128 && b < 128) {
+                edgeCount++;
+            }
+        }
+        
+        return edgeCount;
     }
     
     triggerBotDetection() {

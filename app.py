@@ -65,7 +65,14 @@ ART_IMAGES_PATH = "static/images/art/"
 
 def detect_edges(image_data: bytes) -> bytes:
     """
-    Detect edges in an image using Sobel edge detection.
+    Detect edges in an image using improved Sobel edge detection with Gaussian blur.
+
+    This implementation uses:
+    1. Gaussian blur to reduce noise
+    2. Sobel operators for edge detection in X and Y directions
+    3. Gradient magnitude calculation
+    4. Adaptive thresholding for better edge detection
+    5. Morphological operations to clean up edges
 
     Args:
         image_data: Raw image bytes
@@ -78,11 +85,61 @@ def detect_edges(image_data: bytes) -> bytes:
     # Convert to grayscale
     img_gray = img.convert("L")
 
-    # Apply edge detection using Sobel filter
-    img_edges = img_gray.filter(ImageFilter.FIND_EDGES)
+    # Apply Gaussian blur to reduce noise (radius=1.5 for better noise reduction)
+    img_blurred = img_gray.filter(ImageFilter.GaussianBlur(radius=1.5))
 
-    # Enhance contrast
-    img_edges = img_edges.point(lambda x: 0 if x < 50 else 255)
+    # Apply Sobel edge detection in X direction
+    sobel_x = img_blurred.filter(
+        ImageFilter.Kernel(
+            size=(3, 3), kernel=[-1, 0, 1, -2, 0, 2, -1, 0, 1], scale=1, offset=128
+        )
+    )
+
+    # Apply Sobel edge detection in Y direction
+    sobel_y = img_blurred.filter(
+        ImageFilter.Kernel(
+            size=(3, 3), kernel=[-1, -2, -1, 0, 0, 0, 1, 2, 1], scale=1, offset=128
+        )
+    )
+
+    # Calculate gradient magnitude
+    pixels_x = list(sobel_x.getdata())
+    pixels_y = list(sobel_y.getdata())
+
+    # Combine Sobel X and Y to get gradient magnitude
+    gradient_magnitude = []
+    for px, py in zip(pixels_x, pixels_y):
+        # Calculate magnitude (approximation)
+        magnitude = int((px**2 + py**2) ** 0.5)
+        gradient_magnitude.append(magnitude)
+
+    # Create new image from gradient magnitude
+    img_edges = Image.new("L", img_gray.size)
+    img_edges.putdata(gradient_magnitude)
+
+    # Apply adaptive thresholding
+    # Calculate mean and standard deviation for adaptive threshold
+    pixels = list(img_edges.getdata())
+    mean_val = sum(pixels) / len(pixels)
+
+    # Calculate standard deviation for better threshold
+    variance = sum((x - mean_val) ** 2 for x in pixels) / len(pixels)
+    std_dev = variance**0.5
+
+    # Use a threshold based on mean + 0.5 * standard deviation
+    # This adapts to the image's contrast and captures more edges
+    threshold = min(255, int(mean_val + 0.5 * std_dev))
+
+    # Apply threshold to create binary edge image
+    img_edges = img_edges.point(lambda x: 0 if x < threshold else 255)
+
+    # Apply morphological operations to clean up edges
+    # Dilate slightly to connect broken edges
+    img_edges = img_edges.filter(ImageFilter.MinFilter(3))
+    # Erode to remove noise
+    img_edges = img_edges.filter(ImageFilter.MaxFilter(3))
+    # Additional dilation to make edges more visible
+    img_edges = img_edges.filter(ImageFilter.MinFilter(3))
 
     # Convert back to RGBA
     img_edges = img_edges.convert("RGBA")
