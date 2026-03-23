@@ -151,12 +151,18 @@ class WorstCaptcha {
     async startDrawingChallenge() {
         // Generate drawing challenge
         try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000);
+            
             const response = await fetch('/api/captcha/drawing/generate', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
-                }
+                },
+                signal: controller.signal
             });
+            
+            clearTimeout(timeoutId);
             
             const data = await response.json();
             
@@ -172,6 +178,7 @@ class WorstCaptcha {
             }
         } catch (error) {
             console.error('Error generating drawing challenge:', error);
+            alert('Failed to load drawing challenge. Please refresh the page.');
         }
     }
     
@@ -317,6 +324,9 @@ class WorstCaptcha {
         }
         
         try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000);
+            
             const response = await fetch('/api/captcha/drawing/verify', {
                 method: 'POST',
                 headers: {
@@ -325,8 +335,11 @@ class WorstCaptcha {
                 body: JSON.stringify({
                     drawing_data: drawingData,
                     match_percentage: matchPercentage
-                })
+                }),
+                signal: controller.signal
             });
+            
+            clearTimeout(timeoutId);
             
             const data = await response.json();
             
@@ -336,14 +349,15 @@ class WorstCaptcha {
                     this.gameOver(true);
                 }, 3000);
             } else {
-                // Drawing doesn't match enough - proceed to step 2 anyway
+                // Drawing doesn't match enough - fail the challenge
                 setTimeout(() => {
-                    this.gameOver(true);
+                    this.gameOver(false);
                 }, 3000);
             }
         } catch (error) {
             console.error('Error submitting drawing:', error);
             this.drawingSubmitting = false;  // Reset lock on error
+            alert('Failed to submit drawing. Please try again.');
         }
     }
     
@@ -510,8 +524,8 @@ class WorstCaptcha {
             return finalScore;
         } catch (error) {
             console.error('Error in fallback comparison:', error);
-            // Last resort: return a random percentage based on user's drawing
-            return Math.random() * 30 + 30; // Random between 30-60%
+            // Fail the challenge on error instead of random percentage
+            return 0;
         }
     }
     
@@ -575,10 +589,36 @@ class WorstCaptcha {
                 this.submitComment();
             }
         } else {
-            // Failed step - reset captcha
-            alert('❌ Challenge failed! Please try again.');
-            this.resetCheckbox();
-            this.hideCaptcha();
+            // Failed step - move to next step instead of resetting
+            // Each step is one of three challenges that counts towards the overall score
+            if (this.currentStep === 1) {
+                // Step 1 failed - move to step 2
+                this.currentStep = 2;
+                this.startStep2();
+            } else if (this.currentStep === 2) {
+                // Step 2 failed - move to step 3
+                this.currentStep = 3;
+                this.startStep3();
+            } else if (this.currentStep === 3) {
+                // Step 3 failed - check if we have enough score
+                // Need at least 2 out of 3 steps to pass
+                if (this.overallScore >= 2) {
+                    const captchaCheckbox = document.getElementById('captcha-checkbox');
+                    captchaCheckbox.classList.add('completed');
+                    
+                    const checkbox = document.getElementById('captcha-check');
+                    checkbox.checked = true;
+                    
+                    alert('🎉 Captcha completed! You can now submit your comment.');
+                    this.hideCaptcha();
+                    this.submitComment();
+                } else {
+                    // Not enough score - reset and try again
+                    alert('❌ Not enough challenges passed. Please try again.');
+                    this.resetCheckbox();
+                    this.hideCaptcha();
+                }
+            }
         }
     }
     
@@ -660,13 +700,12 @@ class WorstCaptcha {
         }
         
         if (remaining <= 0) {
-            // Time expired - reset captcha
+            // Time expired - move to next step instead of resetting
             this.step2IsListening = false;
             if (this.step2MicrophoneStream) {
                 this.step2MicrophoneStream.getTracks().forEach(track => track.stop());
             }
-            this.resetCheckbox();
-            this.hideCaptcha();
+            this.gameOver(false);
             return;
         }
         
@@ -842,12 +881,18 @@ class WorstCaptcha {
             
             // Notify backend that step 2 is completed
             try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000);
+                
                 await fetch('/api/captcha/step2/complete', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
-                    }
+                    },
+                    signal: controller.signal
                 });
+                
+                clearTimeout(timeoutId);
             } catch (error) {
                 console.error('Failed to mark step 2 as complete:', error);
             }
@@ -897,13 +942,19 @@ class WorstCaptcha {
         this.step3Is18Plus = is18Plus;
         
         try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000);
+            
             const response = await fetch('/api/captcha/step3/generate', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ is_18_plus: is18Plus })
+                body: JSON.stringify({ is_18_plus: is18Plus }),
+                signal: controller.signal
             });
+            
+            clearTimeout(timeoutId);
             
             const data = await response.json();
             
@@ -921,6 +972,7 @@ class WorstCaptcha {
             }
         } catch (error) {
             console.error('Failed to generate step 3:', error);
+            alert('Failed to load image selection. Please refresh the page.');
         }
     }
     
@@ -991,6 +1043,9 @@ class WorstCaptcha {
         this.step3Submitting = true;
         
         try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000);
+            
             const response = await fetch('/api/captcha/step3/verify', {
                 method: 'POST',
                 headers: {
@@ -998,8 +1053,11 @@ class WorstCaptcha {
                 },
                 body: JSON.stringify({
                     selected_indices: this.step3SelectedIndices
-                })
+                }),
+                signal: controller.signal
             });
+            
+            clearTimeout(timeoutId);
             
             const data = await response.json();
             
@@ -1029,6 +1087,7 @@ class WorstCaptcha {
         } catch (error) {
             console.error('Failed to verify selection:', error);
             this.step3Submitting = false;
+            alert('Failed to verify selection. Please try again.');
         }
     }
     
@@ -1042,9 +1101,12 @@ class WorstCaptcha {
             }
         });
         
-        // After showing correct selection, restart from step 1
+        // After showing correct selection, just reset step 3 (not entire captcha)
         setTimeout(() => {
-            this.resetCaptcha();
+            this.step3Submitting = false;
+            this.step3SelectedIndices = [];
+            // Regenerate step 3 with new images
+            this.startStep3();
         }, 2000);
     }
     
@@ -1078,12 +1140,18 @@ class WorstCaptcha {
     async completeCaptcha() {
         // Notify backend that step 3 is completed
         try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000);
+            
             const response = await fetch('/api/captcha/step3/complete', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
-                }
+                },
+                signal: controller.signal
             });
+            
+            clearTimeout(timeoutId);
             
             const data = await response.json();
             
@@ -1104,7 +1172,7 @@ class WorstCaptcha {
             }
         } catch (error) {
             console.error('Failed to mark step 3 as complete:', error);
-            // Show bot detection on error
+            alert('Failed to complete captcha. Please try again.');
             this.showBotDetection();
         }
     }
@@ -1143,6 +1211,9 @@ class WorstCaptcha {
         const htmlContent = this.quill.root.innerHTML;
         
         try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000);
+            
             const response = await fetch('/api/comments', {
                 method: 'POST',
                 headers: {
@@ -1152,8 +1223,11 @@ class WorstCaptcha {
                     author: author,
                     content: content,
                     html_content: htmlContent
-                })
+                }),
+                signal: controller.signal
             });
+            
+            clearTimeout(timeoutId);
             
             const data = await response.json();
             
@@ -1169,13 +1243,20 @@ class WorstCaptcha {
             
         } catch (error) {
             console.error('Failed to submit comment:', error);
-            alert('Failed to submit comment');
+            alert('Failed to submit comment. Please try again.');
         }
     }
     
     async loadComments() {
         try {
-            const response = await fetch('/api/comments');
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000);
+            
+            const response = await fetch('/api/comments', {
+                signal: controller.signal
+            });
+            
+            clearTimeout(timeoutId);
             const data = await response.json();
             
             const commentsList = document.getElementById('comments-list');
@@ -1207,6 +1288,7 @@ class WorstCaptcha {
             
         } catch (error) {
             console.error('Failed to load comments:', error);
+            alert('Failed to load comments. Please refresh the page.');
         }
     }
     

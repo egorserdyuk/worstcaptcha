@@ -27,6 +27,7 @@ import nh3
 from PIL import Image, ImageFilter
 import io
 import base64
+import threading
 
 app = Flask(__name__)
 
@@ -36,7 +37,22 @@ logging.basicConfig(
 )
 
 # Security configurations
-app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
+secret_key = os.environ.get("SECRET_KEY")
+if not secret_key:
+    # In development, use a file-based key for persistence across restarts
+    key_file = os.path.join(os.path.dirname(__file__), ".secret_key")
+    if os.path.exists(key_file):
+        with open(key_file, "r") as f:
+            secret_key = f.read().strip()
+    else:
+        secret_key = secrets.token_hex(32)
+        with open(key_file, "w") as f:
+            f.write(secret_key)
+        try:
+            os.chmod(key_file, 0o600)  # Restrict permissions
+        except OSError:
+            pass  # Windows doesn't support chmod
+app.secret_key = secret_key
 app.config["WTF_CSRF_ENABLED"] = True
 app.config["WTF_CSRF_TIME_LIMIT"] = 3600  # 1 hour
 
@@ -55,6 +71,7 @@ OVERALL_SCORE_REQUIRED = 2
 
 # In-memory storage for comments (use database in production)
 comments: List[Dict[str, Any]] = []
+_comments_lock = threading.Lock()
 
 # Image categories for step 3
 IMAGE_CATEGORIES: Dict[str, str] = {
@@ -67,6 +84,62 @@ IMAGE_CATEGORIES: Dict[str, str] = {
 
 # Art images for drawing challenge
 ART_IMAGES_PATH = "static/images/art/"
+
+# Performance caches
+_image_cache = {}
+_edge_cache = {}
+_art_images_cache = None
+
+
+def _load_image_cache():
+    """Load all images into cache at startup for performance."""
+    global _image_cache
+    for category, folder in IMAGE_CATEGORIES.items():
+        if os.path.exists(folder):
+            try:
+                _image_cache[category] = [
+                    f
+                    for f in os.listdir(folder)
+                    if f.endswith((".webp", ".jpg", ".jpeg", ".png"))
+                ]
+            except OSError as e:
+                app.logger.error(f"Error reading directory {folder}: {e}")
+                _image_cache[category] = []
+
+
+def _load_art_images_cache():
+    """Load art images into cache at startup."""
+    global _art_images_cache
+    if os.path.exists(ART_IMAGES_PATH):
+        try:
+            _art_images_cache = [
+                f
+                for f in os.listdir(ART_IMAGES_PATH)
+                if f.endswith((".webp", ".jpg", ".jpeg", ".png"))
+            ]
+        except OSError as e:
+            app.logger.error(f"Error reading art directory: {e}")
+            _art_images_cache = []
+    else:
+        _art_images_cache = []
+
+
+def get_edge_image(image_path: str) -> bytes:
+    """Get edge-detected image with caching."""
+    if image_path in _edge_cache:
+        return _edge_cache[image_path]
+
+    with open(image_path, "rb") as f:
+        image_data = f.read()
+
+    edge_data = detect_edges(image_data)
+    _edge_cache[image_path] = edge_data
+    return edge_data
+
+
+# Initialize caches at startup
+_load_image_cache()
+_load_art_images_cache()
 
 
 def detect_edges(image_data: bytes) -> bytes:
@@ -217,14 +290,8 @@ def generate_drawing_challenge() -> jsonify:
         JSON with art image path and edge-detected version.
     """
     try:
-        # Get list of art images
-        art_images = []
-        if os.path.exists(ART_IMAGES_PATH):
-            art_images = [
-                f
-                for f in os.listdir(ART_IMAGES_PATH)
-                if f.endswith((".webp", ".jpg", ".jpeg", ".png"))
-            ]
+        # Get list of art images from cache
+        art_images = _art_images_cache if _art_images_cache else []
 
         if not art_images:
             return jsonify({"error": "No art images available"}), 500
@@ -235,12 +302,8 @@ def generate_drawing_challenge() -> jsonify:
         selected_image = random.choice(art_images)
         image_path = os.path.join(ART_IMAGES_PATH, selected_image)
 
-        # Load and process image
-        with open(image_path, "rb") as f:
-            image_data = f.read()
-
-        # Detect edges
-        edge_data = detect_edges(image_data)
+        # Load and process image with caching
+        edge_data = get_edge_image(image_path)
         edge_base64 = base64.b64encode(edge_data).decode("utf-8")
 
         # Store only the image filename in session (not the large edge_data)
@@ -287,6 +350,10 @@ def verify_drawing() -> jsonify:
 
         if not drawing_data:
             return jsonify({"valid": False, "error": "No drawing data"}), 400
+
+        # Validate drawing data size (max 1MB base64)
+        if len(drawing_data) > 1_000_000:
+            return jsonify({"valid": False, "error": "Drawing data too large"}), 400
 
         # Check if drawing challenge exists
         if "drawing_challenge" not in session:
@@ -360,27 +427,18 @@ def generate_step3() -> jsonify:
     session["step3_score"] = 0
     session["step3_attempts"] = 0
 
-    # Get all images from each category (cached at startup for performance)
+    # Get all images from each category (using cache for performance)
     all_images = []
     for category, folder in IMAGE_CATEGORIES.items():
-        if os.path.exists(folder):
-            try:
-                images = [
-                    f
-                    for f in os.listdir(folder)
-                    if f.endswith((".webp", ".jpg", ".jpeg", ".png"))
-                ]
-                for img in images:
-                    all_images.append(
-                        {
-                            "category": category,
-                            "filename": img,
-                            "path": f"/static/images/{category}/{img}",
-                        }
-                    )
-            except OSError as e:
-                app.logger.error(f"Error reading directory {folder}: {e}")
-                continue
+        images = _image_cache.get(category, [])
+        for img in images:
+            all_images.append(
+                {
+                    "category": category,
+                    "filename": img,
+                    "path": f"/static/images/{category}/{img}",
+                }
+            )
 
     # Shuffle and select 16 images for 4x4 grid
     import random
@@ -461,9 +519,10 @@ def verify_step3() -> jsonify:
     is_correct = selected_set == correct_set
 
     # Add to overall score if correct (once per step 3)
+    # Set flag FIRST to prevent TOCTOU race condition
     if is_correct and not session.get("step3_score_added", False):
+        session["step3_score_added"] = True  # Set flag before incrementing
         session["overall_score"] = session.get("overall_score", 0) + 1
-        session["step3_score_added"] = True
 
     session["step3_attempts"] = session.get("step3_attempts", 0) + 1
 
@@ -509,9 +568,9 @@ def complete_step2() -> jsonify:
 def complete_step3() -> jsonify:
     """Mark step 3 as completed."""
     session["step3_completed"] = True
-    # Add to overall score if step 3 was skipped (under 18)
-    if session.get("step3_skipped", False):
-        session["overall_score"] = session.get("overall_score", 0) + 1
+    # Don't award points for skipped steps - users must complete all steps
+    # if session.get("step3_skipped", False):
+    #     session["overall_score"] = session.get("overall_score", 0) + 1
     return jsonify({"success": True, "overall_score": session.get("overall_score", 0)})
 
 
@@ -530,7 +589,8 @@ def step3_status() -> jsonify:
 @app.route("/api/comments", methods=["GET"])
 def get_comments() -> jsonify:
     """Get all comments."""
-    return jsonify({"comments": comments})
+    with _comments_lock:
+        return jsonify({"comments": comments.copy()})
 
 
 @app.route("/api/comments", methods=["POST"])
@@ -547,10 +607,6 @@ def add_comment() -> jsonify:
         return jsonify({"error": "Invalid request"}), 400
 
     # Verify captcha was completed
-    if session.get("overall_score", 0) < OVERALL_SCORE_REQUIRED:
-        return jsonify({"error": "Captcha not completed"}), 403
-
-    # Check overall score across all steps
     overall_score = session.get("overall_score", 0)
     if overall_score < OVERALL_SCORE_REQUIRED:
         return jsonify(
@@ -569,8 +625,8 @@ def add_comment() -> jsonify:
         return jsonify({"error": "Invalid content"}), 400
 
     html_content = data.get("html_content", "")
-    if not isinstance(html_content, str):
-        return jsonify({"error": "Invalid HTML content"}), 400
+    if not isinstance(html_content, str) or len(html_content) > 10000:
+        return jsonify({"error": "Invalid HTML content (max 10000 chars)"}), 400
 
     # Sanitize HTML content to prevent XSS
     sanitized_html = sanitize_html(html_content)
@@ -583,7 +639,8 @@ def add_comment() -> jsonify:
         "html_content": sanitized_html,
     }
 
-    comments.append(comment)
+    with _comments_lock:
+        comments.append(comment)
 
     # Clear captcha session
     session.pop("overall_score", None)
@@ -603,6 +660,7 @@ def add_comment() -> jsonify:
 
 
 # Exempt API endpoints from CSRF protection
+# Note: add_comment is NOT exempted to maintain CSRF protection
 csrf.exempt(generate_drawing_challenge)
 csrf.exempt(verify_drawing)
 csrf.exempt(generate_step3)
@@ -611,7 +669,7 @@ csrf.exempt(complete_step2)
 csrf.exempt(complete_step3)
 csrf.exempt(step3_status)
 csrf.exempt(get_comments)
-csrf.exempt(add_comment)
+# DO NOT exempt add_comment - it should have CSRF protection
 
 
 if __name__ == "__main__":
