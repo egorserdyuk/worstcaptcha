@@ -9,10 +9,11 @@ Security improvements:
 - Input validation
 - HTML sanitization (using nh3)
 - Secure captcha validation
+- Drawing challenge with edge detection
 """
 
 from flask import Flask, render_template, request, jsonify, session
-from flask_wtf.csrf import CSRFProtect, generate_csrf
+from flask_wtf.csrf import CSRFProtect
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 import secrets
@@ -21,12 +22,37 @@ import time
 from datetime import datetime
 from typing import Dict, List, Any, Tuple
 import os
+import logging
 import nh3
+from PIL import Image, ImageFilter
+import io
+import base64
+import threading
 
 app = Flask(__name__)
 
+# Configure logging to show INFO level logs
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+
 # Security configurations
-app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
+secret_key = os.environ.get("SECRET_KEY")
+if not secret_key:
+    # In development, use a file-based key for persistence across restarts
+    key_file = os.path.join(os.path.dirname(__file__), ".secret_key")
+    if os.path.exists(key_file):
+        with open(key_file, "r") as f:
+            secret_key = f.read().strip()
+    else:
+        secret_key = secrets.token_hex(32)
+        with open(key_file, "w") as f:
+            f.write(secret_key)
+        try:
+            os.chmod(key_file, 0o600)  # Restrict permissions
+        except OSError:
+            pass  # Windows doesn't support chmod
+app.secret_key = secret_key
 app.config["WTF_CSRF_ENABLED"] = True
 app.config["WTF_CSRF_TIME_LIMIT"] = 3600  # 1 hour
 
@@ -40,17 +66,12 @@ limiter = Limiter(
 )
 
 # Constants for magic numbers
-TIME_LIMIT = 12
-TARGET_SCORE = 25
-INSTRUCTION_INTERVAL = 1.8
-MIN_CLICK_INTERVAL = 0.15  # seconds
-BOT_DETECTION_THRESHOLD = 150  # milliseconds
-MAX_WRONG_CLICKS = 10
 STEP3_MIN_SCORE = 2
 OVERALL_SCORE_REQUIRED = 2
 
 # In-memory storage for comments (use database in production)
 comments: List[Dict[str, Any]] = []
+_comments_lock = threading.Lock()
 
 # Image categories for step 3
 IMAGE_CATEGORIES: Dict[str, str] = {
@@ -61,39 +82,151 @@ IMAGE_CATEGORIES: Dict[str, str] = {
     "water": "static/images/water/",
 }
 
-# Captcha instructions pool
-CAPTCHA_INSTRUCTIONS: List[str] = [
-    "Click ALL green shapes that are moving LEFT",
-    "Now click only those that are NOT squares (even if they look like squares)",
-    "Ignore everything red, EXCEPT those reds that are in the top row",
-    "Click the shapes that are currently changing color, but only if they are circular… no, wait, now only if they are NOT circular",
-    "Urgently click everything left over from the previous instruction before it disappears",
-    "If it's an even second - click triangles. If odd - pretend they don't exist",
-    "Click shapes that are touching the border of the grid",
-    "Only click shapes that have appeared in the last 0.5 seconds",
-    "Click all shapes that are NOT moving",
-    "Click shapes that are the same color as the instruction text",
-    "Ignore all shapes except those that are blinking",
-    "Click shapes that are in the same row as a circle",
-    "Click all shapes that are moving faster than average",
-    "Only click shapes that are changing size",
-    "Click shapes that are in the exact center of the grid",
-    "Ignore everything except shapes that are rotating",
-    "Click all shapes that are NOT in the top half",
-    "Click shapes that have been clicked before (if you can remember)",
-    "Only click shapes that are moving in a circle pattern",
-    "Click all shapes that are the same shape as the one in position (3,3)",
-]
+# Art images for drawing challenge
+ART_IMAGES_PATH = "static/images/art/"
+
+# Performance caches
+_image_cache = {}
+_edge_cache = {}
+_art_images_cache = None
 
 
-def validate_shape_id(shape_id: Any) -> bool:
-    """Validate shape_id is an integer between 0 and 35."""
-    return isinstance(shape_id, int) and 0 <= shape_id <= 35
+def _load_image_cache():
+    """Load all images into cache at startup for performance."""
+    global _image_cache
+    for category, folder in IMAGE_CATEGORIES.items():
+        if os.path.exists(folder):
+            try:
+                _image_cache[category] = [
+                    f
+                    for f in os.listdir(folder)
+                    if f.endswith((".webp", ".jpg", ".jpeg", ".png"))
+                ]
+            except OSError as e:
+                app.logger.error(f"Error reading directory {folder}: {e}")
+                _image_cache[category] = []
 
 
-def validate_instruction_index(index: Any) -> bool:
-    """Validate instruction_index is an integer between 0 and 5."""
-    return isinstance(index, int) and 0 <= index <= 5
+def _load_art_images_cache():
+    """Load art images into cache at startup."""
+    global _art_images_cache
+    if os.path.exists(ART_IMAGES_PATH):
+        try:
+            _art_images_cache = [
+                f
+                for f in os.listdir(ART_IMAGES_PATH)
+                if f.endswith((".webp", ".jpg", ".jpeg", ".png"))
+            ]
+        except OSError as e:
+            app.logger.error(f"Error reading art directory: {e}")
+            _art_images_cache = []
+    else:
+        _art_images_cache = []
+
+
+def get_edge_image(image_path: str) -> bytes:
+    """Get edge-detected image with caching."""
+    if image_path in _edge_cache:
+        return _edge_cache[image_path]
+
+    with open(image_path, "rb") as f:
+        image_data = f.read()
+
+    edge_data = detect_edges(image_data)
+    _edge_cache[image_path] = edge_data
+    return edge_data
+
+
+# Initialize caches at startup
+_load_image_cache()
+_load_art_images_cache()
+
+
+def detect_edges(image_data: bytes) -> bytes:
+    """
+    Detect edges in an image using improved Sobel edge detection with Gaussian blur.
+
+    This implementation uses:
+    1. Gaussian blur to reduce noise
+    2. Sobel operators for edge detection in X and Y directions
+    3. Gradient magnitude calculation
+    4. Adaptive thresholding for better edge detection
+    5. Morphological operations to clean up edges
+
+    Args:
+        image_data: Raw image bytes
+
+    Returns:
+        Edge-detected image as bytes
+    """
+    img = Image.open(io.BytesIO(image_data))
+
+    # Convert to grayscale
+    img_gray = img.convert("L")
+
+    # Apply Gaussian blur to reduce noise (radius=1.5 for better noise reduction)
+    img_blurred = img_gray.filter(ImageFilter.GaussianBlur(radius=1.5))
+
+    # Apply Sobel edge detection in X direction
+    sobel_x = img_blurred.filter(
+        ImageFilter.Kernel(
+            size=(3, 3), kernel=[-1, 0, 1, -2, 0, 2, -1, 0, 1], scale=1, offset=128
+        )
+    )
+
+    # Apply Sobel edge detection in Y direction
+    sobel_y = img_blurred.filter(
+        ImageFilter.Kernel(
+            size=(3, 3), kernel=[-1, -2, -1, 0, 0, 0, 1, 2, 1], scale=1, offset=128
+        )
+    )
+
+    # Calculate gradient magnitude
+    pixels_x = list(sobel_x.getdata())
+    pixels_y = list(sobel_y.getdata())
+
+    # Combine Sobel X and Y to get gradient magnitude
+    gradient_magnitude = []
+    for px, py in zip(pixels_x, pixels_y):
+        # Calculate magnitude (approximation)
+        magnitude = int((px**2 + py**2) ** 0.5)
+        gradient_magnitude.append(magnitude)
+
+    # Create new image from gradient magnitude
+    img_edges = Image.new("L", img_gray.size)
+    img_edges.putdata(gradient_magnitude)
+
+    # Apply adaptive thresholding
+    # Calculate mean and standard deviation for adaptive threshold
+    pixels = list(img_edges.getdata())
+    mean_val = sum(pixels) / len(pixels)
+
+    # Calculate standard deviation for better threshold
+    variance = sum((x - mean_val) ** 2 for x in pixels) / len(pixels)
+    std_dev = variance**0.5
+
+    # Use a threshold based on mean + 0.5 * standard deviation
+    # This adapts to the image's contrast and captures more edges
+    threshold = min(255, int(mean_val + 0.5 * std_dev))
+
+    # Apply threshold to create binary edge image
+    img_edges = img_edges.point(lambda x: 0 if x < threshold else 255)
+
+    # Apply morphological operations to clean up edges
+    # Dilate slightly to connect broken edges
+    img_edges = img_edges.filter(ImageFilter.MinFilter(3))
+    # Erode to remove noise
+    img_edges = img_edges.filter(ImageFilter.MaxFilter(3))
+    # Additional dilation to make edges more visible
+    img_edges = img_edges.filter(ImageFilter.MinFilter(3))
+
+    # Convert back to RGBA
+    img_edges = img_edges.convert("RGBA")
+
+    # Save to bytes
+    output = io.BytesIO()
+    img_edges.save(output, format="PNG")
+    return output.getvalue()
 
 
 def validate_selected_indices(indices: Any) -> bool:
@@ -147,200 +280,213 @@ def index() -> str:
     return render_template("index.html", comments=comments)
 
 
-@app.route("/api/csrf-token", methods=["GET"])
-def get_csrf_token() -> jsonify:
-    """Get CSRF token for form submissions."""
-    return jsonify({"csrf_token": generate_csrf()})
-
-
-@app.route("/api/captcha/generate", methods=["POST"])
+@app.route("/api/captcha/drawing/generate", methods=["POST"])
 @limiter.limit("10 per minute")
-def generate_captcha() -> jsonify:
+def generate_drawing_challenge() -> jsonify:
     """
-    Generate a new captcha session with seed and rules.
+    Generate a drawing challenge with an art image.
 
     Returns:
-        JSON with seed, instructions, shapes, and configuration.
+        JSON with art image path and edge-detected version.
     """
-    data = request.json or {}
-    seed = data.get("seed", generate_captcha_seed())
+    try:
+        # Get list of art images from cache
+        art_images = _art_images_cache if _art_images_cache else []
 
-    # Generate deterministic rules based on seed
-    import random
+        if not art_images:
+            return jsonify({"error": "No art images available"}), 500
 
-    random.seed(seed)
+        # Select random art image
+        import random
 
-    # Select 6 random instructions
-    selected_instructions = random.sample(CAPTCHA_INSTRUCTIONS, 6)
+        selected_image = random.choice(art_images)
+        image_path = os.path.join(ART_IMAGES_PATH, selected_image)
 
-    # Generate shape configurations for 6x6 grid
-    shapes = []
-    for i in range(36):
-        shape_type = random.choice(["square", "circle", "triangle", "optical"])
-        color = random.choice(
-            [
-                "#FF6B6B",
-                "#4ECDC4",
-                "#45B7D1",
-                "#96CEB4",
-                "#FFEAA7",
-                "#DDA0DD",
-                "#98D8C8",
-                "#F7DC6F",
-            ]
-        )
-        shapes.append(
-            {
-                "id": i,
-                "type": shape_type,
-                "color": color,
-                "x": random.uniform(-10, 10),
-                "y": random.uniform(-10, 10),
-                "speed_x": random.uniform(-1, 1),
-                "speed_y": random.uniform(-1, 1),
-                "rotation": random.uniform(0, 360),
-                "scale": random.uniform(0.8, 1.2),
-                "opacity": random.uniform(0.7, 1.0),
-            }
-        )
+        # Load and process image with caching
+        edge_data = get_edge_image(image_path)
+        edge_base64 = base64.b64encode(edge_data).decode("utf-8")
 
-    # Store session data
-    session["captcha_seed"] = seed
-    session["captcha_start"] = time.time()
-    session["captcha_score"] = 0
-    session["captcha_clicks"] = 0
-    session["wrong_clicks"] = 0
-    session["last_click_time"] = 0
-    session["white_text_used"] = False
-    session["overall_score"] = 0
-    session["step1_completed"] = False
-    session["step2_completed"] = False
-    session["step3_completed"] = False
-
-    return jsonify(
-        {
-            "seed": seed,
-            "instructions": selected_instructions,
-            "shapes": shapes,
-            "time_limit": TIME_LIMIT,
-            "target_score": TARGET_SCORE,
-            "instruction_interval": INSTRUCTION_INTERVAL,
+        # Store only the image filename in session (not the large edge_data)
+        session["drawing_challenge"] = {
+            "image_filename": selected_image,
+            "start_time": time.time(),
+            "attempts": 0,
         }
-    )
-
-
-@app.route("/api/captcha/verify", methods=["POST"])
-@limiter.limit("30 per minute")
-def verify_captcha_click() -> jsonify:
-    """
-    Verify a captcha click with input validation and secure validation logic.
-
-    Returns:
-        JSON with validation result and score.
-    """
-    data = request.json
-    if not data:
-        return jsonify({"valid": False, "error": "Invalid request"}), 400
-
-    shape_id = data.get("shape_id")
-    instruction_index = data.get("instruction_index")
-
-    # Input validation
-    if not validate_shape_id(shape_id):
-        return jsonify({"valid": False, "error": "Invalid shape_id"}), 400
-
-    if not validate_instruction_index(instruction_index):
-        return jsonify({"valid": False, "error": "Invalid instruction_index"}), 400
-
-    # Check if captcha session exists
-    if "captcha_seed" not in session:
-        return jsonify({"valid": False, "error": "No captcha session"}), 400
-
-    # Check time limit
-    elapsed = time.time() - session["captcha_start"]
-    if elapsed > TIME_LIMIT:
-        return jsonify({"valid": False, "error": "Time expired", "restart": True})
-
-    # Check for too-fast clicking (bot detection)
-    current_time = time.time()
-    if session["last_click_time"] > 0:
-        time_between_clicks = current_time - session["last_click_time"]
-        if time_between_clicks < MIN_CLICK_INTERVAL:
-            return jsonify(
-                {
-                    "valid": False,
-                    "error": "YOU ARE BOT!",
-                    "restart": True,
-                    "bot_detected": True,
-                }
-            )
-
-    session["last_click_time"] = current_time
-
-    # Determine if click is correct using secure validation
-    is_correct, reason = validate_captcha_click(
-        shape_id, instruction_index, session["captcha_seed"]
-    )
-
-    if is_correct:
-        session["captcha_score"] += 1
-        session["captcha_clicks"] += 1
-
-        if session["captcha_score"] >= TARGET_SCORE:
-            # Step 1 completed successfully - add to overall score
-            session["step1_completed"] = True
-            session["overall_score"] = session.get("overall_score", 0) + 1
-            return jsonify(
-                {
-                    "valid": True,
-                    "score": session["captcha_score"],
-                    "completed": True,
-                    "message": "Captcha completed!",
-                    "overall_score": session["overall_score"],
-                }
-            )
-    else:
-        session["wrong_clicks"] += 1
-        session["captcha_score"] = max(0, session["captcha_score"] - 3)
-        session["captcha_clicks"] += 1
 
         return jsonify(
             {
-                "valid": False,
-                "score": session["captcha_score"],
-                "wrong_clicks": session["wrong_clicks"],
-                "shake": True,
-                "bot_sound": True,
+                "success": True,
+                "image_path": f"/static/images/art/{selected_image}",
+                "edge_image": f"data:image/png;base64,{edge_base64}",
+                "time_limit": 30,  # 30 seconds for drawing
             }
         )
 
-    return jsonify(
-        {
-            "valid": is_correct,
-            "score": session["captcha_score"],
-            "clicks": session["captcha_clicks"],
-        }
-    )
+    except Exception as e:
+        app.logger.error(f"Error generating drawing challenge: {e}")
+        return jsonify({"error": "Failed to generate drawing challenge"}), 500
 
 
-@app.route("/api/captcha/status", methods=["GET"])
-def captcha_status() -> jsonify:
-    """Get current captcha status."""
-    if "captcha_seed" not in session:
-        return jsonify({"active": False})
+def calculate_drawing_match(drawing_data: str, edge_image_path: str) -> float:
+    """
+    Calculate match percentage between user's drawing and edge image on the server.
 
-    elapsed = time.time() - session["captcha_start"]
+    Args:
+        drawing_data: Base64 encoded image data from user
+        edge_image_path: Path to the edge-detected image
 
-    return jsonify(
-        {
-            "active": True,
-            "score": session["captcha_score"],
-            "clicks": session["captcha_clicks"],
-            "wrong_clicks": session["wrong_clicks"],
-            "elapsed": elapsed,
-            "remaining": max(0, TIME_LIMIT - elapsed),
-        }
-    )
+    Returns:
+        Match percentage (0-100)
+    """
+    try:
+        # Decode base64 drawing data
+        if "," in drawing_data:
+            # Remove data URL prefix if present
+            drawing_data = drawing_data.split(",")[1]
+
+        drawing_bytes = base64.b64decode(drawing_data)
+        drawing_img = Image.open(io.BytesIO(drawing_bytes)).convert("RGBA")
+
+        # Load edge image
+        edge_img = Image.open(edge_image_path).convert("RGBA")
+
+        # Resize drawing to match edge image dimensions
+        drawing_img = drawing_img.resize(edge_img.size, Image.Resampling.LANCZOS)
+
+        # Convert to grayscale for comparison
+        drawing_gray = drawing_img.convert("L")
+        edge_gray = edge_img.convert("L")
+
+        # Get pixel data
+        drawing_pixels = list(drawing_gray.getdata())
+        edge_pixels = list(edge_gray.getdata())
+
+        # Count edge pixels in both images (dark pixels are edges)
+        edge_count = sum(1 for p in edge_pixels if p < 128)
+        drawing_count = sum(1 for p in drawing_pixels if p < 128)
+
+        # Calculate overlap (pixels that are dark in both images)
+        overlap_count = sum(
+            1 for d, e in zip(drawing_pixels, edge_pixels) if d < 128 and e < 128
+        )
+
+        # Calculate match percentage based on overlap
+        if edge_count == 0:
+            return 0.0
+
+        overlap_percentage = (overlap_count / edge_count) * 100
+
+        # Add bonus for user drawing edges (up to 20% bonus)
+        user_bonus = min(20, (drawing_count / max(edge_count, 1)) * 10)
+
+        # Final score with bonus, capped at 100
+        final_score = min(100, overlap_percentage + user_bonus)
+
+        app.logger.info(
+            f"Drawing match calculation: edge_pixels={edge_count}, user_pixels={drawing_count}, overlap={overlap_count}, overlap%={overlap_percentage:.2f}%, bonus={user_bonus:.2f}%, final={final_score:.2f}%"
+        )
+
+        return final_score
+
+    except Exception as e:
+        app.logger.error(f"Error calculating drawing match: {e}")
+        return 0.0
+
+
+@app.route("/api/captcha/drawing/verify", methods=["POST"])
+@limiter.limit("20 per minute")
+def verify_drawing() -> jsonify:
+    """
+    Verify user's drawing against the original image edges.
+
+    SECURITY: Match percentage is calculated on the server, not trusted from client.
+
+    Expects:
+        JSON with 'drawing_data' as base64 encoded image
+
+    Returns:
+        JSON with validation result and server-calculated match percentage.
+    """
+    try:
+        data = request.json
+        if not data:
+            return jsonify({"valid": False, "error": "Invalid request"}), 400
+
+        drawing_data = data.get("drawing_data")
+
+        if not drawing_data:
+            return jsonify({"valid": False, "error": "No drawing data"}), 400
+
+        # Validate drawing data size (max 1MB base64)
+        if len(drawing_data) > 1_000_000:
+            return jsonify({"valid": False, "error": "Drawing data too large"}), 400
+
+        # Check if drawing challenge exists
+        if "drawing_challenge" not in session:
+            return jsonify(
+                {"valid": False, "error": "No drawing challenge session"}
+            ), 400
+
+        challenge = session["drawing_challenge"]
+
+        # Check time limit (30 seconds)
+        elapsed = time.time() - challenge["start_time"]
+        if elapsed > 30:
+            return jsonify({"valid": False, "error": "Time expired", "restart": True})
+
+        # Increment attempts
+        challenge["attempts"] += 1
+        session["drawing_challenge"] = challenge
+
+        # Calculate match percentage on the server (SECURITY FIX)
+        image_path = os.path.join(ART_IMAGES_PATH, challenge["image_filename"])
+        edge_data = get_edge_image(image_path)
+
+        # Save edge data to temporary file for comparison
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_file:
+            tmp_file.write(edge_data)
+            tmp_edge_path = tmp_file.name
+
+        try:
+            match_percentage = calculate_drawing_match(drawing_data, tmp_edge_path)
+        finally:
+            # Clean up temporary file
+            try:
+                os.unlink(tmp_edge_path)
+            except OSError:
+                pass
+
+        # Require at least 60% match (calculated on server)
+        is_valid = match_percentage >= 60
+
+        if is_valid:
+            # Drawing challenge completed
+            session["overall_score"] = session.get("overall_score", 0) + 1
+            session["step1_completed"] = True
+            return jsonify(
+                {
+                    "valid": True,
+                    "match_percentage": round(match_percentage, 2),
+                    "completed": True,
+                    "message": "Drawing challenge completed!",
+                    "overall_score": session.get("overall_score", 0),
+                }
+            )
+        else:
+            return jsonify(
+                {
+                    "valid": False,
+                    "match_percentage": round(match_percentage, 2),
+                    "attempts": challenge["attempts"],
+                    "message": f"Drawing doesn't match enough. Match: {round(match_percentage, 2)}%",
+                }
+            )
+
+    except Exception as e:
+        app.logger.error(f"Error verifying drawing: {e}")
+        return jsonify({"valid": False, "error": "Failed to verify drawing"}), 500
 
 
 @app.route("/api/captcha/step3/generate", methods=["POST"])
@@ -367,27 +513,18 @@ def generate_step3() -> jsonify:
     session["step3_score"] = 0
     session["step3_attempts"] = 0
 
-    # Get all images from each category (cached at startup for performance)
+    # Get all images from each category (using cache for performance)
     all_images = []
     for category, folder in IMAGE_CATEGORIES.items():
-        if os.path.exists(folder):
-            try:
-                images = [
-                    f
-                    for f in os.listdir(folder)
-                    if f.endswith((".webp", ".jpg", ".jpeg", ".png"))
-                ]
-                for img in images:
-                    all_images.append(
-                        {
-                            "category": category,
-                            "filename": img,
-                            "path": f"/static/images/{category}/{img}",
-                        }
-                    )
-            except OSError as e:
-                app.logger.error(f"Error reading directory {folder}: {e}")
-                continue
+        images = _image_cache.get(category, [])
+        for img in images:
+            all_images.append(
+                {
+                    "category": category,
+                    "filename": img,
+                    "path": f"/static/images/{category}/{img}",
+                }
+            )
 
     # Shuffle and select 16 images for 4x4 grid
     import random
@@ -398,19 +535,20 @@ def generate_step3() -> jsonify:
     # Store in session for verification
     session["step3_images"] = selected_images
 
-    # Select first category to find
+    # Select only one random category for this challenge
     categories = list(IMAGE_CATEGORIES.keys())
     random.shuffle(categories)
-    session["step3_current_category"] = categories[0]
-    session["step3_categories_to_find"] = categories
+    selected_category = categories[0]
+    session["step3_current_category"] = selected_category
+    session["step3_categories_to_find"] = [selected_category]  # Only one category
     session["step3_category_index"] = 0
 
     return jsonify(
         {
             "skipped": False,
             "images": selected_images,
-            "current_category": categories[0],
-            "total_categories": len(categories),
+            "current_category": selected_category,
+            "total_categories": 1,  # Only one category
         }
     )
 
@@ -446,6 +584,15 @@ def verify_step3() -> jsonify:
     if not current_category or not images:
         return jsonify({"valid": False, "error": "No step 3 session"}), 400
 
+    # Log the answer for step 3
+    # Convert indices to 1-indexed [row, col] coordinates for 4x4 grid
+    answer_coords = []
+    for idx in selected_indices:
+        row = idx // 4 + 1  # 1-indexed row
+        col = idx % 4 + 1  # 1-indexed column
+        answer_coords.append(f"[{row}, {col}]")
+    app.logger.info(f"subject: {current_category}; answer {', '.join(answer_coords)}")
+
     # Find all indices that belong to the current category
     correct_indices = [
         i for i, img in enumerate(images) if img["category"] == current_category
@@ -457,8 +604,11 @@ def verify_step3() -> jsonify:
 
     is_correct = selected_set == correct_set
 
-    if is_correct:
-        session["step3_score"] = session.get("step3_score", 0) + 1
+    # Add to overall score if correct (once per step 3)
+    # Set flag FIRST to prevent TOCTOU race condition
+    if is_correct and not session.get("step3_score_added", False):
+        session["step3_score_added"] = True  # Set flag before incrementing
+        session["overall_score"] = session.get("overall_score", 0) + 1
 
     session["step3_attempts"] = session.get("step3_attempts", 0) + 1
 
@@ -476,7 +626,6 @@ def verify_step3() -> jsonify:
                 "correct_indices": correct_indices,
                 "next_category": categories[category_index],
                 "completed": False,
-                "score": session["step3_score"],
             }
         )
     else:
@@ -486,7 +635,6 @@ def verify_step3() -> jsonify:
                 "valid": is_correct,
                 "correct_indices": correct_indices,
                 "completed": True,
-                "score": session["step3_score"],
                 "total_categories": len(categories),
             }
         )
@@ -506,9 +654,9 @@ def complete_step2() -> jsonify:
 def complete_step3() -> jsonify:
     """Mark step 3 as completed."""
     session["step3_completed"] = True
-    # Only add to overall score if step 3 score >= minimum
-    if session.get("step3_score", 0) >= STEP3_MIN_SCORE:
-        session["overall_score"] = session.get("overall_score", 0) + 1
+    # Don't award points for skipped steps - users must complete all steps
+    # if session.get("step3_skipped", False):
+    #     session["overall_score"] = session.get("overall_score", 0) + 1
     return jsonify({"success": True, "overall_score": session.get("overall_score", 0)})
 
 
@@ -518,7 +666,6 @@ def step3_status() -> jsonify:
     return jsonify(
         {
             "skipped": session.get("step3_skipped", False),
-            "score": session.get("step3_score", 0),
             "attempts": session.get("step3_attempts", 0),
             "overall_score": session.get("overall_score", 0),
         }
@@ -528,7 +675,8 @@ def step3_status() -> jsonify:
 @app.route("/api/comments", methods=["GET"])
 def get_comments() -> jsonify:
     """Get all comments."""
-    return jsonify({"comments": comments})
+    with _comments_lock:
+        return jsonify({"comments": comments.copy()})
 
 
 @app.route("/api/comments", methods=["POST"])
@@ -545,10 +693,6 @@ def add_comment() -> jsonify:
         return jsonify({"error": "Invalid request"}), 400
 
     # Verify captcha was completed
-    if "captcha_seed" not in session or session.get("captcha_score", 0) < TARGET_SCORE:
-        return jsonify({"error": "Captcha not completed"}), 403
-
-    # Check overall score across all steps
     overall_score = session.get("overall_score", 0)
     if overall_score < OVERALL_SCORE_REQUIRED:
         return jsonify(
@@ -567,8 +711,8 @@ def add_comment() -> jsonify:
         return jsonify({"error": "Invalid content"}), 400
 
     html_content = data.get("html_content", "")
-    if not isinstance(html_content, str):
-        return jsonify({"error": "Invalid HTML content"}), 400
+    if not isinstance(html_content, str) or len(html_content) > 10000:
+        return jsonify({"error": "Invalid HTML content (max 10000 chars)"}), 400
 
     # Sanitize HTML content to prevent XSS
     sanitized_html = sanitize_html(html_content)
@@ -581,24 +725,37 @@ def add_comment() -> jsonify:
         "html_content": sanitized_html,
     }
 
-    comments.append(comment)
+    with _comments_lock:
+        comments.append(comment)
 
     # Clear captcha session
-    session.pop("captcha_seed", None)
-    session.pop("captcha_score", None)
     session.pop("overall_score", None)
     session.pop("step1_completed", None)
     session.pop("step2_completed", None)
     session.pop("step3_completed", None)
     session.pop("step3_skipped", None)
-    session.pop("step3_score", None)
+    session.pop("step3_score_added", None)
     session.pop("step3_attempts", None)
     session.pop("step3_images", None)
     session.pop("step3_current_category", None)
     session.pop("step3_categories_to_find", None)
     session.pop("step3_category_index", None)
+    session.pop("drawing_challenge", None)
 
     return jsonify({"success": True, "comment": comment})
+
+
+# Exempt API endpoints from CSRF protection
+# Note: add_comment is NOT exempted to maintain CSRF protection
+csrf.exempt(generate_drawing_challenge)
+csrf.exempt(verify_drawing)
+csrf.exempt(generate_step3)
+csrf.exempt(verify_step3)
+csrf.exempt(complete_step2)
+csrf.exempt(complete_step3)
+csrf.exempt(step3_status)
+csrf.exempt(get_comments)
+# DO NOT exempt add_comment - it should have CSRF protection
 
 
 if __name__ == "__main__":

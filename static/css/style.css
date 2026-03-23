@@ -260,8 +260,8 @@ header .subtitle {
     background: white;
     border-radius: 3px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-    width: 400px;
-    max-width: 90vw;
+    width: 800px;
+    max-width: 95vw;
     animation: slideIn 0.3s ease-out;
     font-family: 'Roboto', 'Segoe UI', Arial, sans-serif;
 }
@@ -326,136 +326,16 @@ header .subtitle {
     padding: 12px;
 }
 
-.captcha-instruction {
-    background: #f8f9fa;
-    padding: 12px;
-    text-align: center;
-    font-size: 0.95rem;
-    font-weight: 600;
-    color: #333;
-    border-radius: 4px;
-    margin-bottom: 12px;
-    min-height: 50px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.3s;
-}
 
-.captcha-instruction.white-text {
-    color: #f8f9fa !important;
-}
-
-.captcha-grid {
-    display: grid;
-    grid-template-columns: repeat(6, 1fr);
-    gap: 6px;
-    background: #f8f9fa;
-    padding: 12px;
-    border-radius: 4px;
-    margin-bottom: 12px;
-    min-height: 300px;
-}
-
-/* Step 2 and 3 container should take full grid area */
-.captcha-grid .step2-container,
-.captcha-grid .step3-container {
-    grid-column: 1 / -1;
-    grid-row: 1 / -1;
+/* Step 2 and 3 container */
+.step2-container,
+.step3-container {
     background: white;
     border-radius: 4px;
     padding: 20px;
+    min-height: 300px;
 }
 
-.captcha-cell {
-    aspect-ratio: 1;
-    background: white;
-    border: 2px solid #e0e0e0;
-    border-radius: 4px;
-    cursor: pointer;
-    position: relative;
-    overflow: hidden;
-    transition: all 0.2s;
-}
-
-.captcha-cell:hover {
-    border-color: #667eea;
-    transform: scale(1.05);
-}
-
-.captcha-cell.clicked {
-    animation: clickPulse 0.3s ease-out;
-}
-
-@keyframes clickPulse {
-    0% { transform: scale(1); }
-    50% { transform: scale(0.9); }
-    100% { transform: scale(1); }
-}
-
-/* Shapes */
-.shape {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    transition: all 0.1s;
-}
-
-.shape.square {
-    width: 70%;
-    height: 70%;
-}
-
-.shape.circle {
-    width: 70%;
-    height: 70%;
-    border-radius: 50%;
-}
-
-.shape.triangle {
-    width: 0;
-    height: 0;
-    border-left: 35px solid transparent;
-    border-right: 35px solid transparent;
-    border-bottom: 60px solid;
-}
-
-.shape.optical {
-    width: 70%;
-    height: 70%;
-    border-radius: 50%;
-    background: conic-gradient(from 0deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #9400d3, #ff0000);
-    animation: opticalSpin 2s linear infinite;
-}
-
-@keyframes opticalSpin {
-    from { transform: translate(-50%, -50%) rotate(0deg); }
-    to { transform: translate(-50%, -50%) rotate(360deg); }
-}
-
-/* Captcha Status */
-.captcha-status {
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.85rem;
-    color: #666;
-    margin-bottom: 8px;
-}
-
-.captcha-progress {
-    height: 6px;
-    background: #e0e0e0;
-    border-radius: 3px;
-    overflow: hidden;
-}
-
-.progress-bar {
-    height: 100%;
-    background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-    width: 0%;
-    transition: width 0.3s;
-}
 
 /* Step 2: Note Singing UI */
 .step2-container {
@@ -765,65 +645,132 @@ header .subtitle {
     line-height: 1.6;
 }
 
-/* Bot Detection Overlay */
-.bot-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
+
+
+
+
+/* Drawing Challenge Styles */
+.drawing-container {
     width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.9);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 10001;
-    animation: fadeIn 0.3s;
+    padding: 20px;
+    box-sizing: border-box;
 }
 
-.bot-message {
+.drawing-container h3 {
     text-align: center;
-    color: #ff4444;
+    color: #667eea;
+    margin-bottom: 10px;
+    font-size: 1.5rem;
 }
 
-.bot-icon {
-    font-size: 5rem;
-    display: block;
+.drawing-container > p {
+    text-align: center;
+    color: #666;
     margin-bottom: 20px;
-    animation: shake 0.5s infinite;
 }
 
-@keyframes shake {
-    0%, 100% { transform: translateX(0); }
-    25% { transform: translateX(-10px); }
-    75% { transform: translateX(10px); }
+.drawing-workspace {
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+    align-items: flex-start;
+    flex-wrap: wrap;
 }
 
-.bot-text {
-    font-size: 3rem;
-    font-weight: 900;
-    text-transform: uppercase;
-    letter-spacing: 5px;
+.reference-image,
+.drawing-area {
+    flex: 1;
+    min-width: 280px;
+    max-width: 380px;
 }
 
-/* Screen Shake Overlay */
-.shake-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
+.reference-image h4,
+.drawing-area h4 {
+    text-align: center;
+    color: #333;
+    margin-bottom: 10px;
+    font-size: 1rem;
+}
+
+.reference-image img {
     width: 100%;
-    height: 100%;
-    pointer-events: none;
-    z-index: 9999;
+    height: auto;
+    max-height: 350px;
+    object-fit: contain;
+    border: 2px solid #667eea;
+    border-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    background: white;
 }
 
-.shake-overlay.active {
-    animation: screenShake 0.5s;
+#drawing-canvas {
+    width: 100%;
+    height: auto;
+    max-height: 350px;
+    border: 2px solid #667eea;
+    border-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    cursor: crosshair;
+    background: white;
+    touch-action: none;
 }
 
-@keyframes screenShake {
-    0%, 100% { transform: translate(0, 0); }
-    10%, 30%, 50%, 70%, 90% { transform: translate(-5px, 5px); }
-    20%, 40%, 60%, 80% { transform: translate(5px, -5px); }
+.drawing-tools {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    margin-top: 15px;
+}
+
+.drawing-tools .btn {
+    padding: 10px 20px;
+    font-size: 1rem;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.drawing-tools .btn-secondary {
+    background: #e0e0e0;
+    color: #333;
+}
+
+.drawing-tools .btn-secondary:hover {
+    background: #d0d0d0;
+}
+
+.drawing-tools .btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.drawing-tools .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+}
+
+.drawing-progress {
+    display: flex;
+    justify-content: center;
+    gap: 30px;
+    margin-top: 20px;
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.drawing-progress span {
+    color: #333;
+}
+
+#drawing-time {
+    color: #4CAF50;
+    font-weight: bold;
+}
+
+#drawing-match {
+    color: #667eea;
+    font-weight: bold;
 }
 
 /* Hidden class */
@@ -831,15 +778,7 @@ header .subtitle {
     display: none !important;
 }
 
-/* Cursor hiding */
-.cursor-hidden {
-    cursor: none !important;
-}
 
-/* Cursor invert */
-.cursor-inverted {
-    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="white" d="M12 2L2 22h20L12 2z"/></svg>') 12 12, auto !important;
-}
 
 /* Responsive */
 @media (max-width: 768px) {
@@ -848,25 +787,14 @@ header .subtitle {
     }
     
     .captcha-popup {
-        width: 95vw;
-        max-height: 90vh;
+        width: 98vw;
+        max-height: 95vh;
         overflow-y: auto;
     }
     
-    .captcha-grid {
-        gap: 4px;
-        padding: 8px;
-        min-height: 250px;
-    }
+
     
-    .captcha-instruction {
-        font-size: 0.85rem;
-        padding: 10px;
-    }
-    
-    .bot-text {
-        font-size: 2rem;
-    }
+
     
     /* Step 2 and 3 mobile improvements */
     .step2-container {
@@ -927,5 +855,114 @@ header .subtitle {
     
     #step3-submit-btn {
         width: 100%;
+    }
+    
+    /* Drawing challenge mobile improvements */
+    .drawing-container {
+        padding: 10px;
+    }
+    
+    .drawing-container h3 {
+        font-size: 1.1rem;
+        margin-bottom: 8px;
+    }
+    
+    .drawing-container > p {
+        font-size: 0.85rem;
+        margin-bottom: 15px;
+    }
+    
+    .drawing-workspace {
+        flex-direction: column;
+        align-items: center;
+        gap: 15px;
+    }
+    
+    .reference-image,
+    .drawing-area {
+        max-width: 100%;
+        width: 100%;
+        min-width: unset;
+    }
+    
+    .reference-image img,
+    #drawing-canvas {
+        max-height: 250px;
+    }
+    
+    .drawing-progress {
+        flex-direction: column;
+        gap: 8px;
+        text-align: center;
+        font-size: 0.95rem;
+    }
+    
+    .drawing-tools {
+        flex-direction: row;
+        gap: 10px;
+        justify-content: center;
+    }
+    
+    .drawing-tools .btn {
+        width: auto;
+        padding: 10px 20px;
+    }
+}
+
+/* Bot Detection Caption */
+.bot-detection-caption {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: linear-gradient(135deg, #ff4444 0%, #cc0000 100%);
+    color: white;
+    padding: 30px 50px;
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(255, 68, 68, 0.5);
+    z-index: 10001;
+    text-align: center;
+    font-size: 1.5rem;
+    font-weight: bold;
+    animation: fadeIn 0.3s ease-out;
+}
+
+.bot-detection-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 15px;
+}
+
+.bot-icon {
+    font-size: 4rem;
+    animation: pulse 1s infinite;
+}
+
+.bot-text {
+    font-size: 2rem;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+    50% {
+        transform: scale(1.1);
+        opacity: 0.8;
+    }
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0.8);
+    }
+    to {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1);
     }
 }
