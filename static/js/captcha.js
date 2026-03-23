@@ -314,27 +314,18 @@ class WorstCaptcha {
         // Get canvas data
         const drawingData = this.drawingCanvas.toDataURL('image/png');
         
-        // Calculate match percentage using pixelmatch
-        const matchPercentage = await this.calculateMatchPercentage(drawingData);
-        
-        // Update match display
-        const matchEl = document.getElementById('drawing-match');
-        if (matchEl) {
-            matchEl.textContent = matchPercentage.toFixed(2);
-        }
-        
         try {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 10000);
             
+            // SECURITY: Only send drawing data to server - server calculates match percentage
             const response = await fetch('/api/captcha/drawing/verify', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    drawing_data: drawingData,
-                    match_percentage: matchPercentage
+                    drawing_data: drawingData
                 }),
                 signal: controller.signal
             });
@@ -342,6 +333,12 @@ class WorstCaptcha {
             clearTimeout(timeoutId);
             
             const data = await response.json();
+            
+            // Update match display with server-calculated percentage
+            const matchEl = document.getElementById('drawing-match');
+            if (matchEl && data.match_percentage !== undefined) {
+                matchEl.textContent = data.match_percentage.toFixed(2);
+            }
             
             if (data.valid) {
                 // Drawing challenge completed - show similarity score and wait 3 seconds before moving to step 2

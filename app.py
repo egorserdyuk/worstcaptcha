@@ -327,18 +327,85 @@ def generate_drawing_challenge() -> jsonify:
         return jsonify({"error": "Failed to generate drawing challenge"}), 500
 
 
+def calculate_drawing_match(drawing_data: str, edge_image_path: str) -> float:
+    """
+    Calculate match percentage between user's drawing and edge image on the server.
+
+    Args:
+        drawing_data: Base64 encoded image data from user
+        edge_image_path: Path to the edge-detected image
+
+    Returns:
+        Match percentage (0-100)
+    """
+    try:
+        # Decode base64 drawing data
+        if "," in drawing_data:
+            # Remove data URL prefix if present
+            drawing_data = drawing_data.split(",")[1]
+
+        drawing_bytes = base64.b64decode(drawing_data)
+        drawing_img = Image.open(io.BytesIO(drawing_bytes)).convert("RGBA")
+
+        # Load edge image
+        edge_img = Image.open(edge_image_path).convert("RGBA")
+
+        # Resize drawing to match edge image dimensions
+        drawing_img = drawing_img.resize(edge_img.size, Image.Resampling.LANCZOS)
+
+        # Convert to grayscale for comparison
+        drawing_gray = drawing_img.convert("L")
+        edge_gray = edge_img.convert("L")
+
+        # Get pixel data
+        drawing_pixels = list(drawing_gray.getdata())
+        edge_pixels = list(edge_gray.getdata())
+
+        # Count edge pixels in both images (dark pixels are edges)
+        edge_count = sum(1 for p in edge_pixels if p < 128)
+        drawing_count = sum(1 for p in drawing_pixels if p < 128)
+
+        # Calculate overlap (pixels that are dark in both images)
+        overlap_count = sum(
+            1 for d, e in zip(drawing_pixels, edge_pixels) if d < 128 and e < 128
+        )
+
+        # Calculate match percentage based on overlap
+        if edge_count == 0:
+            return 0.0
+
+        overlap_percentage = (overlap_count / edge_count) * 100
+
+        # Add bonus for user drawing edges (up to 20% bonus)
+        user_bonus = min(20, (drawing_count / max(edge_count, 1)) * 10)
+
+        # Final score with bonus, capped at 100
+        final_score = min(100, overlap_percentage + user_bonus)
+
+        app.logger.info(
+            f"Drawing match calculation: edge_pixels={edge_count}, user_pixels={drawing_count}, overlap={overlap_count}, overlap%={overlap_percentage:.2f}%, bonus={user_bonus:.2f}%, final={final_score:.2f}%"
+        )
+
+        return final_score
+
+    except Exception as e:
+        app.logger.error(f"Error calculating drawing match: {e}")
+        return 0.0
+
+
 @app.route("/api/captcha/drawing/verify", methods=["POST"])
 @limiter.limit("20 per minute")
 def verify_drawing() -> jsonify:
     """
     Verify user's drawing against the original image edges.
 
+    SECURITY: Match percentage is calculated on the server, not trusted from client.
+
     Expects:
         JSON with 'drawing_data' as base64 encoded image
-        JSON with 'match_percentage' calculated on frontend
 
     Returns:
-        JSON with validation result.
+        JSON with validation result and server-calculated match percentage.
     """
     try:
         data = request.json
@@ -346,7 +413,6 @@ def verify_drawing() -> jsonify:
             return jsonify({"valid": False, "error": "Invalid request"}), 400
 
         drawing_data = data.get("drawing_data")
-        match_percentage = data.get("match_percentage", 0)
 
         if not drawing_data:
             return jsonify({"valid": False, "error": "No drawing data"}), 400
@@ -372,7 +438,27 @@ def verify_drawing() -> jsonify:
         challenge["attempts"] += 1
         session["drawing_challenge"] = challenge
 
-        # Require at least 60% match (calculated on frontend)
+        # Calculate match percentage on the server (SECURITY FIX)
+        image_path = os.path.join(ART_IMAGES_PATH, challenge["image_filename"])
+        edge_data = get_edge_image(image_path)
+
+        # Save edge data to temporary file for comparison
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_file:
+            tmp_file.write(edge_data)
+            tmp_edge_path = tmp_file.name
+
+        try:
+            match_percentage = calculate_drawing_match(drawing_data, tmp_edge_path)
+        finally:
+            # Clean up temporary file
+            try:
+                os.unlink(tmp_edge_path)
+            except OSError:
+                pass
+
+        # Require at least 60% match (calculated on server)
         is_valid = match_percentage >= 60
 
         if is_valid:
