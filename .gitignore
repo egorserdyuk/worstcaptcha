@@ -398,5 +398,6 @@ $RECYCLE.BIN/
 
 # Other
 .secret_key
+convert.py
 
 # End of https://www.toptal.com/developers/gitignore/api/windows,macos,linux,python,venv,node
