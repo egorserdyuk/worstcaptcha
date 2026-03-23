@@ -16,6 +16,8 @@ from flask import Flask, render_template, request, jsonify, session
 from flask_wtf.csrf import CSRFProtect
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 import secrets
 import hashlib
 import time
@@ -30,6 +32,15 @@ import base64
 import threading
 
 app = Flask(__name__)
+
+# Database configuration
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+db = SQLAlchemy(model_class=Base)
 
 # Configure logging to show INFO level logs
 logging.basicConfig(
@@ -56,6 +67,22 @@ app.secret_key = secret_key
 app.config["WTF_CSRF_ENABLED"] = True
 app.config["WTF_CSRF_TIME_LIMIT"] = 3600  # 1 hour
 
+# PostgreSQL database configuration
+database_url = os.environ.get("DATABASE_URL")
+if database_url:
+    # Handle Heroku-style postgres:// URLs (SQLAlchemy 2.0+ requires postgresql://)
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
+    app.config["SQLALCHEMY_DATABASE_URI"] = database_url
+else:
+    # Default to SQLite for development if no DATABASE_URL is set
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///comments.db"
+
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+# Initialize database
+db.init_app(app)
+
 # Initialize extensions
 csrf = CSRFProtect(app)
 limiter = Limiter(
@@ -68,6 +95,29 @@ limiter = Limiter(
 # Constants for magic numbers
 STEP3_MIN_SCORE = 2
 OVERALL_SCORE_REQUIRED = 2
+
+# Database model for comments
+
+
+class Comment(db.Model):
+    __tablename__ = "comments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    author: Mapped[str] = mapped_column(nullable=False)
+    content: Mapped[str] = mapped_column(nullable=False)
+    html_content: Mapped[str] = mapped_column(nullable=True)
+    timestamp: Mapped[datetime] = mapped_column(nullable=False)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert comment to dictionary for JSON serialization."""
+        return {
+            "id": self.id,
+            "author": self.author,
+            "content": self.content,
+            "html_content": self.html_content,
+            "timestamp": self.timestamp.isoformat(),
+        }
+
 
 # In-memory storage for comments (use database in production)
 comments: List[Dict[str, Any]] = []
@@ -140,6 +190,10 @@ def get_edge_image(image_path: str) -> bytes:
 # Initialize caches at startup
 _load_image_cache()
 _load_art_images_cache()
+
+# Create database tables
+with app.app_context():
+    db.create_all()
 
 
 def detect_edges(image_data: bytes) -> bytes:
@@ -674,9 +728,22 @@ def step3_status() -> jsonify:
 
 @app.route("/api/comments", methods=["GET"])
 def get_comments() -> jsonify:
-    """Get all comments."""
-    with _comments_lock:
-        return jsonify({"comments": comments.copy()})
+    """Get all comments from database."""
+    try:
+        # Query all comments from database, ordered by timestamp descending
+        db_comments = db.session.scalars(
+            db.select(Comment).order_by(Comment.timestamp.desc())
+        ).all()
+
+        # Convert to list of dictionaries
+        comments_list = [comment.to_dict() for comment in db_comments]
+
+        return jsonify({"comments": comments_list})
+    except Exception as e:
+        app.logger.error(f"Error fetching comments from database: {e}")
+        # Fallback to in-memory storage if database fails
+        with _comments_lock:
+            return jsonify({"comments": comments.copy()})
 
 
 @app.route("/api/comments", methods=["POST"])
@@ -717,6 +784,7 @@ def add_comment() -> jsonify:
     # Sanitize HTML content to prevent XSS
     sanitized_html = sanitize_html(html_content)
 
+    # Create comment object
     comment = {
         "id": len(comments) + 1,
         "author": nh3.clean(author),
@@ -725,8 +793,26 @@ def add_comment() -> jsonify:
         "html_content": sanitized_html,
     }
 
-    with _comments_lock:
-        comments.append(comment)
+    # Store in database
+    try:
+        db_comment = Comment(
+            author=nh3.clean(author),
+            content=nh3.clean(content),
+            html_content=sanitized_html,
+            timestamp=datetime.now(),
+        )
+        db.session.add(db_comment)
+        db.session.commit()
+
+        # Update comment dict with database-generated ID
+        comment["id"] = db_comment.id
+        app.logger.info(f"Comment saved to database with ID: {db_comment.id}")
+    except Exception as e:
+        app.logger.error(f"Error saving comment to database: {e}")
+        db.session.rollback()
+        # Fallback to in-memory storage if database fails
+        with _comments_lock:
+            comments.append(comment)
 
     # Clear captcha session
     session.pop("overall_score", None)
