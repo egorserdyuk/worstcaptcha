@@ -966,3 +966,63 @@ header .subtitle {
         transform: translate(-50%, -50%) scale(1);
     }
 }
+
+/* GitHub Footer */
+.github-footer {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+}
+
+.github-link {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 50px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    text-decoration: none;
+    color: #333;
+    font-weight: 500;
+    font-size: 0.9rem;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(10px);
+}
+
+.github-link:hover {
+    background: #333;
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 25px rgba(0, 0, 0, 0.25);
+}
+
+.github-icon {
+    width: 24px;
+    height: 24px;
+    fill: currentColor;
+    transition: fill 0.3s ease;
+}
+
+.github-link:hover .github-icon {
+    fill: white;
+}
+
+/* Responsive adjustments for GitHub footer */
+@media (max-width: 768px) {
+    .github-footer {
+        bottom: 15px;
+    }
+    
+    .github-link {
+        padding: 8px 16px;
+        font-size: 0.85rem;
+    }
+    
+    .github-icon {
+        width: 20px;
+        height: 20px;
+    }
+}
