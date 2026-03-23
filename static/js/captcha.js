@@ -1214,10 +1214,14 @@ class WorstCaptcha {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 10000);
             
+            // Get CSRF token from meta tag
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+            
             const response = await fetch('/api/comments', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken || ''
                 },
                 body: JSON.stringify({
                     author: author,
