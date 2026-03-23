@@ -32,6 +32,7 @@ class WorstCaptcha {
         this.drawingTimerInterval = null;
         this.artImagePath = null;
         this.edgeImage = null;
+        this.drawingSubmitting = false;  // Prevent multiple submissions
         
         // Step 2: Note Singing
         this.step2Notes = [];
@@ -50,9 +51,10 @@ class WorstCaptcha {
         this.step3CurrentCategory = '';
         this.step3SelectedIndices = [];
         this.step3Score = 0;
-        this.step3TotalCategories = 5;
+        this.step3TotalCategories = 1;  // Only one category
         this.step3Is18Plus = false;
         this.step3Skipped = false;
+        this.step3Submitting = false;  // Prevent multiple submissions
         
         // Overall score tracking
         this.overallScore = 0;
@@ -287,6 +289,13 @@ class WorstCaptcha {
     }
     
     async submitDrawing() {
+        // Prevent multiple submissions
+        if (this.drawingSubmitting) {
+            return;
+        }
+        
+        this.drawingSubmitting = true;
+        
         // Stop timer
         if (this.drawingTimerInterval) {
             clearInterval(this.drawingTimerInterval);
@@ -337,6 +346,7 @@ class WorstCaptcha {
                     this.clearCanvas();
                     this.drawingStartTime = Date.now();
                     this.startDrawingTimer();
+                    this.drawingSubmitting = false;  // Reset lock for retry
                 } else {
                     // Too many attempts - just proceed to next step without bot detection
                     this.gameOver(false);
@@ -344,6 +354,7 @@ class WorstCaptcha {
             }
         } catch (error) {
             console.error('Error submitting drawing:', error);
+            this.drawingSubmitting = false;  // Reset lock on error
         }
     }
     
@@ -962,7 +973,7 @@ class WorstCaptcha {
                 </div>
                 <div class="step3-controls">
                     <div class="step3-progress">
-                        <span>Category: <span id="category-progress">1</span>/${this.step3TotalCategories}</span>
+                        <span>Challenge: 1/1</span>
                         <span>Score: <span id="step3-score">0</span></span>
                     </div>
                     <button id="step3-submit-btn" class="btn btn-primary">VERIFY</button>
@@ -996,6 +1007,13 @@ class WorstCaptcha {
     }
     
     async submitImageSelection() {
+        // Prevent multiple submissions
+        if (this.step3Submitting) {
+            return;
+        }
+        
+        this.step3Submitting = true;
+        
         try {
             const response = await fetch('/api/captcha/step3/verify', {
                 method: 'POST',
@@ -1015,27 +1033,29 @@ class WorstCaptcha {
                 document.getElementById('step3-score').textContent = this.step3Score;
                 
                 if (data.completed) {
-                    // All categories completed - backend will handle overall score
+                    // Single category completed - backend will handle overall score
                     this.completeCaptcha();
                 } else {
-                    // Move to next category
+                    // This shouldn't happen with single category, but handle it anyway
                     this.step3CurrentCategory = data.next_category;
                     this.step3SelectedIndices = [];
                     document.getElementById('target-category').textContent = this.step3CurrentCategory;
-                    document.getElementById('category-progress').textContent =
-                        parseInt(document.getElementById('category-progress').textContent) + 1;
                     
                     // Clear selections
                     document.querySelectorAll('.image-cell').forEach(cell => {
                         cell.classList.remove('selected');
                     });
+                    
+                    this.step3Submitting = false;
                 }
             } else {
                 // Wrong selection - show correct indices
                 this.showCorrectSelection(data.correct_indices);
+                this.step3Submitting = false;
             }
         } catch (error) {
             console.error('Failed to verify selection:', error);
+            this.step3Submitting = false;
         }
     }
     
@@ -1049,41 +1069,67 @@ class WorstCaptcha {
             }
         });
         
-        // Clear selections after a delay
+        // After showing correct selection, restart from step 1
         setTimeout(() => {
-            this.step3SelectedIndices = [];
-            document.querySelectorAll('.image-cell').forEach(cell => {
-                cell.classList.remove('selected', 'correct', 'incorrect');
-            });
-        }, 1500);
+            this.resetCaptcha();
+        }, 2000);
+    }
+    
+    resetCaptcha() {
+        // Reset all captcha state and start from step 1
+        this.currentStep = 1;
+        this.step3Submitting = false;
+        this.step3SelectedIndices = [];
+        this.step3Score = 0;
+        
+        // Clear drawing timer if exists
+        if (this.drawingTimerInterval) {
+            clearInterval(this.drawingTimerInterval);
+            this.drawingTimerInterval = null;
+        }
+        
+        // Stop microphone if active
+        if (this.step2MicrophoneStream) {
+            this.step2MicrophoneStream.getTracks().forEach(track => track.stop());
+            this.step2MicrophoneStream = null;
+        }
+        this.step2IsListening = false;
+        this.step2StartTime = null;
+        
+        // Start from step 1
+        this.startDrawingChallenge();
     }
     
     async completeCaptcha() {
         // Notify backend that step 3 is completed
         try {
-            await fetch('/api/captcha/step3/complete', {
+            const response = await fetch('/api/captcha/step3/complete', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 }
             });
+            
+            const data = await response.json();
+            
+            // Check if backend confirms captcha is complete (overall_score >= 2)
+            if (data.overall_score >= 2) {
+                const captchaCheckbox = document.getElementById('captcha-checkbox');
+                captchaCheckbox.classList.add('completed');
+                
+                const checkbox = document.getElementById('captcha-check');
+                checkbox.checked = true;
+                
+                alert('🎉 Captcha completed! You can now submit your comment.');
+                this.hideCaptcha();
+                this.submitComment();
+            } else {
+                // Show animated bot detection caption
+                this.showBotDetection();
+            }
         } catch (error) {
             console.error('Failed to mark step 3 as complete:', error);
-        }
-        
-        // Check if overall score is >= 2
-        if (this.overallScore >= 2) {
-            const captchaCheckbox = document.getElementById('captcha-checkbox');
-            captchaCheckbox.classList.add('completed');
-            
-            const checkbox = document.getElementById('captcha-check');
-            checkbox.checked = true;
-            
-            alert('🎉 Captcha completed! You can now submit your comment.');
-            this.hideCaptcha();
-            this.submitComment();
-        } else {
-            // Show animated bot detection caption
+            // Show bot detection on error
             this.showBotDetection();
         }
     }

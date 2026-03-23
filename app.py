@@ -385,19 +385,20 @@ def generate_step3() -> jsonify:
     # Store in session for verification
     session["step3_images"] = selected_images
 
-    # Select first category to find
+    # Select only one random category for this challenge
     categories = list(IMAGE_CATEGORIES.keys())
     random.shuffle(categories)
-    session["step3_current_category"] = categories[0]
-    session["step3_categories_to_find"] = categories
+    selected_category = categories[0]
+    session["step3_current_category"] = selected_category
+    session["step3_categories_to_find"] = [selected_category]  # Only one category
     session["step3_category_index"] = 0
 
     return jsonify(
         {
             "skipped": False,
             "images": selected_images,
-            "current_category": categories[0],
-            "total_categories": len(categories),
+            "current_category": selected_category,
+            "total_categories": 1,  # Only one category
         }
     )
 
