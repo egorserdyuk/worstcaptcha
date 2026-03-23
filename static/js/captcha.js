@@ -70,11 +70,20 @@ class WorstCaptcha {
         });
         
         // Set up event listeners
-        document.getElementById('submit-comment').addEventListener('click', () => this.showCaptcha());
+        document.getElementById('submit-comment').addEventListener('click', () => this.handleCommentSubmit());
         document.getElementById('captcha-close').addEventListener('click', () => this.hideCaptcha());
         
         // Checkbox interaction
         document.getElementById('captcha-check').addEventListener('change', (e) => {
+            const captchaCheckbox = document.getElementById('captcha-checkbox');
+            
+            // Don't show captcha if it's already completed
+            if (captchaCheckbox.classList.contains('completed')) {
+                // Keep checkbox checked if captcha is completed
+                e.target.checked = true;
+                return;
+            }
+            
             if (e.target.checked) {
                 // Add spinning animation inside checkbox
                 const checkboxCustom = document.querySelector('.checkbox-custom');
@@ -88,11 +97,21 @@ class WorstCaptcha {
             }
         });
         
+        // Prevent unchecking checkbox when captcha is completed
+        document.getElementById('captcha-check').addEventListener('click', (e) => {
+            const captchaCheckbox = document.getElementById('captcha-checkbox');
+            
+            // Prevent unchecking if captcha is completed
+            if (captchaCheckbox.classList.contains('completed') && e.target.checked) {
+                e.preventDefault();
+            }
+        });
+        
         // Load comments
         this.loadComments();
     }
     
-    async showCaptcha() {
+    handleCommentSubmit() {
         // Check if comment is empty
         const content = this.quill.getText().trim();
         if (!content) {
@@ -100,6 +119,18 @@ class WorstCaptcha {
             return;
         }
         
+        // Check if captcha is completed
+        const captchaCheckbox = document.getElementById('captcha-checkbox');
+        if (captchaCheckbox.classList.contains('completed')) {
+            // Captcha is completed, submit the comment
+            this.submitComment();
+        } else {
+            // Captcha not completed, show captcha
+            this.showCaptcha();
+        }
+    }
+    
+    async showCaptcha() {
         // Show captcha widget
         document.getElementById('captcha-widget').classList.remove('hidden');
         
@@ -127,8 +158,11 @@ class WorstCaptcha {
         this.step2IsListening = false;
         this.step2StartTime = null;
         
-        // Reset checkbox and clean check field
-        this.resetCheckbox();
+        // Only reset checkbox if captcha is not completed
+        const captchaCheckbox = document.getElementById('captcha-checkbox');
+        if (!captchaCheckbox.classList.contains('completed')) {
+            this.resetCheckbox();
+        }
     }
     
     resetCheckbox() {
@@ -574,16 +608,15 @@ class WorstCaptcha {
                 this.currentStep = 3;
                 this.startStep3();
             } else if (this.currentStep === 3) {
-                // All steps completed
+                // All steps completed - show check mark but don't auto-submit
                 const captchaCheckbox = document.getElementById('captcha-checkbox');
                 captchaCheckbox.classList.add('completed');
                 
                 const checkbox = document.getElementById('captcha-check');
                 checkbox.checked = true;
                 
-                alert('🎉 Captcha completed! You can now submit your comment.');
+                alert('🎉 Captcha completed! Click "Leave a Comment" to post your comment.');
                 this.hideCaptcha();
-                this.submitComment();
             }
         } else {
             // Failed step - move to next step instead of resetting
@@ -606,9 +639,8 @@ class WorstCaptcha {
                     const checkbox = document.getElementById('captcha-check');
                     checkbox.checked = true;
                     
-                    alert('🎉 Captcha completed! You can now submit your comment.');
+                    alert('🎉 Captcha completed! Click "Leave a Comment" to post your comment.');
                     this.hideCaptcha();
-                    this.submitComment();
                 } else {
                     // Not enough score - reset and try again
                     alert('❌ Not enough challenges passed. Please try again.');
@@ -1160,9 +1192,8 @@ class WorstCaptcha {
                 const checkbox = document.getElementById('captcha-check');
                 checkbox.checked = true;
                 
-                alert('🎉 Captcha completed! You can now submit your comment.');
+                alert('🎉 Captcha completed! Click "Leave a Comment" to post your comment.');
                 this.hideCaptcha();
-                this.submitComment();
             } else {
                 // Show animated bot detection caption
                 this.showBotDetection();
