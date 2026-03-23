@@ -326,7 +326,8 @@ class WorstCaptcha {
             } else {
                 // Check if time expired
                 if (data.restart) {
-                    this.triggerBotDetection();
+                    // Time expired - just proceed to next step without bot detection
+                    this.gameOver(false);
                     return;
                 }
                 
@@ -337,8 +338,8 @@ class WorstCaptcha {
                     this.drawingStartTime = Date.now();
                     this.startDrawingTimer();
                 } else {
-                    // Too many attempts - trigger bot detection
-                    this.triggerBotDetection();
+                    // Too many attempts - just proceed to next step without bot detection
+                    this.gameOver(false);
                 }
             }
         } catch (error) {
@@ -1082,10 +1083,37 @@ class WorstCaptcha {
             this.hideCaptcha();
             this.submitComment();
         } else {
-            alert('❌ Captcha failed! Please try again.');
+            // Show animated bot detection caption
+            this.showBotDetection();
+        }
+    }
+    
+    showBotDetection() {
+        // Create animated bot detection caption
+        const botCaption = document.createElement('div');
+        botCaption.className = 'bot-detection-caption';
+        botCaption.innerHTML = `
+            <div class="bot-detection-content">
+                <span class="bot-icon">🤖</span>
+                <span class="bot-text">Bot detected</span>
+            </div>
+        `;
+        
+        // Add to captcha widget
+        const captchaWidget = document.getElementById('captcha-widget');
+        captchaWidget.appendChild(botCaption);
+        
+        // Add animation classes
+        setTimeout(() => {
+            botCaption.classList.add('animate__animated', 'animate__shakeX');
+        }, 100);
+        
+        // Remove after animation completes
+        setTimeout(() => {
+            botCaption.remove();
             this.hideCaptcha();
             this.resetCheckbox();
-        }
+        }, 2000);
     }
     
     async submitComment() {
