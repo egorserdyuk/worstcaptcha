@@ -5,6 +5,27 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <meta name="csrf-token" content="{{ csrf_token() }}">
         <title>Worst Captcha - Comment Wall</title>
+
+        <!-- Open Graph -->
+        <meta property="og:type" content="website">
+        <meta property="og:url" content="{{ request.url }}">
+        <meta property="og:title"
+            content="Worst Captcha - The Most Annoying Captcha Ever Created">
+        <meta property="og:description"
+            content="A comment wall with an extremely difficult multi-step captcha verification system. Prove you're human by completing three increasingly annoying challenges.">
+        <meta property="og:image"
+            content="{{ request.url_root }}static/images/og.webp">
+        <meta property="og:site_name" content="Worst Captcha">
+
+        <!-- X/Twitter -->
+        <meta name="twitter:card" content="summary_large_image">
+        <meta name="twitter:url" content="{{ request.url }}">
+        <meta name="twitter:title"
+            content="Worst Captcha - The Most Annoying Captcha Ever Created">
+        <meta name="twitter:description"
+            content="A comment wall with an extremely difficult multi-step captcha verification system. Prove you're human by completing three increasingly annoying challenges.">
+        <meta name="twitter:image"
+            content="{{ request.url_root }}static/images/og.webp">
         <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css"
             rel="stylesheet">
         <link rel="stylesheet"
