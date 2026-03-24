@@ -72,3 +72,7 @@ tests
 test
 *_test.py
 test_*.py
+
+# Other
+docs
+*.md
