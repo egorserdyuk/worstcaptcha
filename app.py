@@ -92,6 +92,13 @@ limiter = Limiter(
     storage_uri="memory://",
 )
 
+
+@limiter.request_filter
+def ip_whitelist():
+    """Exempt requests from localhost (127.0.0.1) from rate limiting."""
+    return request.remote_addr == "127.0.0.1"
+
+
 # Constants for magic numbers
 STEP3_MIN_SCORE = 2
 OVERALL_SCORE_REQUIRED = 2
@@ -405,7 +412,8 @@ def calculate_drawing_match(drawing_data: str, edge_image_path: str) -> float:
         edge_img = Image.open(edge_image_path).convert("RGBA")
 
         # Resize drawing to match edge image dimensions
-        drawing_img = drawing_img.resize(edge_img.size, Image.Resampling.LANCZOS)
+        drawing_img = drawing_img.resize(
+            edge_img.size, Image.Resampling.LANCZOS)
 
         # Convert to grayscale for comparison
         drawing_gray = drawing_img.convert("L")
@@ -504,7 +512,8 @@ def verify_drawing() -> jsonify:
             tmp_edge_path = tmp_file.name
 
         try:
-            match_percentage = calculate_drawing_match(drawing_data, tmp_edge_path)
+            match_percentage = calculate_drawing_match(
+                drawing_data, tmp_edge_path)
         finally:
             # Clean up temporary file
             try:
@@ -594,7 +603,8 @@ def generate_step3() -> jsonify:
     random.shuffle(categories)
     selected_category = categories[0]
     session["step3_current_category"] = selected_category
-    session["step3_categories_to_find"] = [selected_category]  # Only one category
+    session["step3_categories_to_find"] = [
+        selected_category]  # Only one category
     session["step3_category_index"] = 0
 
     return jsonify(
@@ -645,7 +655,8 @@ def verify_step3() -> jsonify:
         row = idx // 4 + 1  # 1-indexed row
         col = idx % 4 + 1  # 1-indexed column
         answer_coords.append(f"[{row}, {col}]")
-    app.logger.info(f"subject: {current_category}; answer {', '.join(answer_coords)}")
+    app.logger.info(
+        f"subject: {current_category}; answer {', '.join(answer_coords)}")
 
     # Find all indices that belong to the current category
     correct_indices = [
@@ -667,7 +678,8 @@ def verify_step3() -> jsonify:
     session["step3_attempts"] = session.get("step3_attempts", 0) + 1
 
     # Move to next category
-    session["step3_category_index"] = session.get("step3_category_index", 0) + 1
+    session["step3_category_index"] = session.get(
+        "step3_category_index", 0) + 1
     category_index = session["step3_category_index"]
     categories = session.get("step3_categories_to_find", [])
 
